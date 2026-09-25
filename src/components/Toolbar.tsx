@@ -92,7 +92,12 @@ export function Toolbar({ nodes, counts, view, onView, query, onQuery, filters, 
       )}
 
       {/* One container for the whole set, the same shape as the view toggle on the
-          right -- they are both segmented controls and should look like it. */}
+          right -- they are both segmented controls and should look like it.
+
+          Hidden when it holds no chips, the same guard the group row above uses. On a
+          healthy fleet with nothing expiring, every count is zero, so the container
+          rendered on its own as a small empty bordered pill. */}
+      {chips.length > 0 && (
       <div
         role="group"
         aria-label="筛选节点"
@@ -126,6 +131,7 @@ export function Toolbar({ nodes, counts, view, onView, query, onQuery, filters, 
           )
         })}
       </div>
+      )}
 
       {filters.length > 0 && (
         <button
