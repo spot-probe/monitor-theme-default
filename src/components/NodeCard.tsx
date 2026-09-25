@@ -1,4 +1,9 @@
+import type { CSSProperties } from "react"
 import { ArrowDown, ArrowUp } from "lucide-react"
+import {
+  siAlmalinux, siAlpinelinux, siArchlinux, siCentos, siDebian, siFedora, siLinux, siOpensuse, siRedhat,
+  siRockylinux, siUbuntu, type SimpleIcon,
+} from "simple-icons"
 
 import { Badge } from "@/components/ui/badge"
 import { Card } from "@/components/ui/card"
@@ -7,6 +12,31 @@ import type { Node } from "@/lib/api"
 import { bytes, CYCLES, daysUntil, FOREVER, money, osName, pair, percent, rate, uptime } from "@/lib/format"
 import { availabilityText, fractionTone, TONE_CLASS, windowLabel } from "@/lib/uptime"
 import { cn } from "@/lib/utils"
+
+// Emitted as files and fetched on first use, so a page carries only the flags its
+// nodes are in rather than all 267. vite.config.ts keeps them from being inlined
+// into the entry chunk as data URLs. The simplified 3x2 set: this theme is
+// embedded in the hub binary, and flag-icons' detailed emblems total 1.95 MiB
+// against 174 KiB here, a difference invisible at 18 by 12 pixels.
+const FLAGS = Object.fromEntries(
+  Object.entries(
+    import.meta.glob<string>("/node_modules/country-flag-icons/3x2/*.svg", {
+      query: "?url",
+      import: "default",
+      eager: true,
+    }),
+  ).map(([path, url]) => [path.match(/([\w-]+)\.svg$/)![1], url]),
+)
+
+// Matched against the whole release name, since "Red Hat Enterprise Linux" and
+// "Raspbian GNU/Linux" do not lead with one word to key on. The distributions a
+// VPS ships with; the rest take the penguin. Each logo costs 1-6 KB of entry
+// bundle, so the list stays at what hosts offer.
+const DISTROS: [string, SimpleIcon][] = [
+  ["debian", siDebian], ["raspbian", siDebian], ["ubuntu", siUbuntu], ["alpine", siAlpinelinux],
+  ["centos", siCentos], ["rocky", siRockylinux], ["almalinux", siAlmalinux], ["red hat", siRedhat],
+  ["fedora", siFedora], ["arch", siArchlinux], ["opensuse", siOpensuse],
+]
 
 /** Which direction the plan meters, matching the node's traffic_mode. */
 export function monthUsage(node: Node): number {
@@ -32,9 +62,12 @@ export function deployed(node: Node) {
 
 // Three states, three colours. A node that never connected is not "down": it is
 // simply absent, so it stays grey rather than borrowing the red that means a
-// machine stopped answering.
+// machine stopped answering. Online keeps upstream's own `--online` green rather
+// than this fork's brighter `--ok`, which is a meter fill and too light to carry
+// as a six-pixel dot on a white card. Upstream's third state is a second grey
+// here; the red is deliberate and predates the port.
 const DOT = {
-  ok: "bg-ok ring-2 ring-ok/25",
+  ok: "bg-online ring-2 ring-online/25",
   down: "bg-destructive ring-2 ring-destructive/20",
   absent: "bg-muted-foreground/40",
 } as const
@@ -83,16 +116,55 @@ export function Status({ node }: { node: Node }) {
   )
 }
 
-/** Where the machine is, as a tinted chip rather than a second outline. */
+/**
+ * Where the machine is: its flag, or the bare code for one the set lacks.
+ *
+ * The flag is fetched on demand rather than inlined, and the code stays legible
+ * in the `title` for anyone who does not read the emblems. A country the hub
+ * could not resolve renders nothing at all; a code with no flag in the simplified
+ * set falls back to this fork's tinted chip, which is the shape this badge had
+ * before the flags arrived.
+ */
 export function Country({ node }: { node: Node }) {
   if (!node.country) return null
+  const src = FLAGS[node.country]
+  if (!src) {
+    return (
+      <Badge
+        variant="outline"
+        className="shrink-0 rounded-md border-transparent bg-tag font-normal text-tag-foreground"
+      >
+        {node.country}
+      </Badge>
+    )
+  }
   return (
-    <Badge
-      variant="outline"
-      className="shrink-0 rounded-md border-transparent bg-tag font-normal text-tag-foreground"
+    <img
+      src={src}
+      alt={node.country}
+      title={node.country}
+      className="h-3 w-4.5 shrink-0 rounded-[2px] ring-1 ring-foreground/10"
+    />
+  )
+}
+
+/**
+ * The distribution's logo in its brand colour, ahead of its name in the muted
+ * line. Mixed toward white on the dark theme, where AlmaLinux's black and
+ * CentOS's navy would otherwise vanish into the card.
+ */
+function OsIcon({ os }: { os: string }) {
+  const name = os.toLowerCase()
+  const icon = DISTROS.find(([key]) => name.includes(key))?.[1] ?? siLinux
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      aria-hidden
+      style={{ "--brand": `#${icon.hex}` } as CSSProperties}
+      className="size-3 shrink-0 fill-(--brand) dark:fill-[color-mix(in_oklab,var(--brand)_60%,white)]"
     >
-      {node.country}
-    </Badge>
+      <path d={icon.path} />
+    </svg>
   )
 }
 
@@ -192,11 +264,29 @@ export function NodeCard({ node, onOpen }: { node: Node; onOpen: () => void }) {
           </div>
           {/* With the chip folded into the line above, the muted second line has
               the width to carry the state and the machine's shape together. */}
-          <p className="mt-1 truncate text-xs text-muted-foreground">
-            {statusLabel(node)}
-            {node.os ? ` · ${osName(node.os)}` : " · 等待首次上报"}
-            {node.virt && node.virt !== "none" ? ` · ${node.virt}` : ""}
-            {node.arch ? ` · ${node.arch}` : ""}
+          {/* The distro's own logo sits against the distro's name rather than at
+              the head of the line, because this line leads with the state -- a
+              penguin in front of "在线 3 小时" would read as the state's mark
+              rather than Debian's. The state keeps its width; what truncates on a
+              narrow card is the machine's shape, which is the part a reader can
+              afford to lose. */}
+          <p className="mt-1 flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
+            <span className="shrink-0">{statusLabel(node)}</span>
+            {node.os ? (
+              <>
+                <span className="shrink-0" aria-hidden>
+                  ·
+                </span>
+                <OsIcon os={node.os} />
+                <span className="truncate">
+                  {osName(node.os)}
+                  {node.virt && node.virt !== "none" ? ` · ${node.virt}` : ""}
+                  {node.arch ? ` · ${node.arch}` : ""}
+                </span>
+              </>
+            ) : (
+              <span className="shrink-0">· 等待首次上报</span>
+            )}
           </p>
           {/* Its own line rather than a fourth item on the one above: that line
               is the machine's shape and truncates first on a narrow card, and the
