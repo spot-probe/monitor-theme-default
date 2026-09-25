@@ -11,11 +11,13 @@ import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Segmented } from "@/components/ui/segmented"
 import { Skeleton } from "@/components/ui/skeleton"
+import { AvailabilityCard } from "@/components/Availability"
 import { Country, Status } from "@/components/NodeCard"
 import { api, type Node } from "@/lib/api"
 import {
   axisBytes, axisTop, bytes, clockFor, quarters, cpuName, CYCLES, FOREVER, money, osName, rate, timeTicks,
 } from "@/lib/format"
+import type { Availability } from "@/lib/uptime"
 
 type Point = {
   ts: number
@@ -193,6 +195,26 @@ export function NodeDetail({ node, onBack }: { node: Node; onBack: () => void })
   const [zoom, setZoom] = useState<[number, number] | null>(null)
   // Where the chart begins on screen, so its height can occupy the remainder.
   const [chartTop, setChartTop] = useState(0)
+  // The availability bar, fetched apart from the charts below. Both a node list
+  // and this page quote an availability figure, and the two must cover the same
+  // window or the page contradicts itself -- so this asks for the same 168 hours
+  // the card's `d7` is measured over, whatever range the charts are on. That is
+  // also all an anonymous caller may ask for. `null` while it is in flight, or if
+  // the hub is older than the feature, and no card is drawn for either.
+  const [avail, setAvail] = useState<Availability | null>(null)
+
+  useEffect(() => {
+    let active = true
+    // oxlint-disable-next-line react/set-state-in-effect
+    setAvail(null)
+    api<{ availability: Availability | null }>(`/nodes/${node.id}/metrics?hours=168&series=availability`)
+      .then((next) => { if (active) setAvail(next.availability ?? null) })
+      // No error of its own: the bar is an addition to this screen, and the charts
+      // below report a failed read in the page's own words. A refused or missing
+      // bar therefore leaves the page otherwise intact.
+      .catch(() => { if (active) setAvail(null) })
+    return () => { active = false }
+  }, [node.id])
 
   useEffect(() => {
     let active = true
@@ -385,6 +407,8 @@ export function NodeDetail({ node, onBack }: { node: Node; onBack: () => void })
         />
         </dl>
       </Card>
+
+      {avail && <AvailabilityCard data={avail} />}
 
       {node.remark && (
         <Card className="gap-0 border-dashed bg-muted/40 p-4">

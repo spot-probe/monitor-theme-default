@@ -5,6 +5,7 @@ import { Card } from "@/components/ui/card"
 import { Meter } from "@/components/Meter"
 import type { Node } from "@/lib/api"
 import { bytes, CYCLES, daysUntil, FOREVER, money, osName, pair, percent, rate, uptime } from "@/lib/format"
+import { availabilityText, fractionTone, TONE_CLASS, windowLabel } from "@/lib/uptime"
 import { cn } from "@/lib/utils"
 
 /** Which direction the plan meters, matching the node's traffic_mode. */
@@ -95,6 +96,37 @@ export function Country({ node }: { node: Node }) {
   )
 }
 
+/**
+ * How much of the recent past this node was actually reporting in.
+ *
+ * The window is the one the hub measured, printed from `from7`/`to` rather than
+ * assumed to be a week: it is clamped to the node's own life and to the history
+ * the hub retains, so a machine added yesterday reads "近 1 天" over a day it is
+ * genuinely accountable for, and a hub keeping a week does not let the card claim
+ * a month. The dot takes the same three colours as the detail page's bar at the
+ * same thresholds, so the card and the bar cannot disagree about a node.
+ *
+ * A hub older than this feature sends no `uptime` at all, and no line is drawn:
+ * an absent figure and a node that missed every minute are different answers.
+ */
+export function UptimeLine({ node }: { node: Node }) {
+  const u = node.uptime
+  // Nothing was expected yet -- a node added within the current minute -- so
+  // there is no fraction to print that would not be a claim about a window of
+  // zero minutes.
+  if (!u || u.to <= u.from7) return null
+  return (
+    <p className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
+      <span
+        aria-hidden
+        className={cn("size-1.5 shrink-0 rounded-full", TONE_CLASS[fractionTone(u.d7)])}
+      />
+      {windowLabel(u.from7, u.to)}
+      <span className="tnum">{availabilityText(u.d7)}</span>
+    </p>
+  )
+}
+
 // Traffic uses the plan's own counting rule, so the bar matches the quota the
 // node is billed against.
 function trafficFoot(node: Node) {
@@ -166,6 +198,11 @@ export function NodeCard({ node, onOpen }: { node: Node; onOpen: () => void }) {
             {node.virt && node.virt !== "none" ? ` · ${node.virt}` : ""}
             {node.arch ? ` · ${node.arch}` : ""}
           </p>
+          {/* Its own line rather than a fourth item on the one above: that line
+              is the machine's shape and truncates first on a narrow card, and the
+              uptime figure is the one thing here a reader scans the whole fleet
+              for. */}
+          <UptimeLine node={node} />
       </div>
 
       {/* One layout for both states: a disconnected node still knows its
