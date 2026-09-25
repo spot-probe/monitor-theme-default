@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react"
 
+import type { Uptime } from "./uptime"
+
 export type Metrics = {
   uptime: number
   cpu: number
@@ -61,6 +63,12 @@ export type Node = {
   month_start: string
   day_rx: number
   day_tx: number
+  /**
+   * The share of each window the node was reporting in, with the window it was
+   * measured over. Absent from a hub older than the feature, and absent is the
+   * only honest answer then -- the page shows no uptime line rather than a zero.
+   */
+  uptime?: Uptime
   /** Panel only. */
   hostname?: string
   ip?: string
