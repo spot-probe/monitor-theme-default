@@ -57,6 +57,13 @@
   /* Fills. Used for dots, meter bars and the packet-loss figure. */
   --ok: oklch(0.723 0.192 149.6); /* #22c55e */
   --warn: oklch(0.769 0.165 70.1); /* #f59e0b */
+  /* The online dot's own green, taken from upstream's measured value rather than
+     reusing `--ok`: the dot is six pixels on a white card, and a green that clears
+     3:1 there has to be darker than the fill a meter bar can carry. Upstream's
+     pair of tokens also has `--offline`; this fork keeps its own third state
+     instead -- see `DOT` in NodeCard.tsx, where a machine that stopped answering
+     is red rather than a second grey. */
+  --online: oklch(0.6 0.16 150); /* 3.7:1 on the card */
   /* Text twins of the two above, dark enough to read as small type. */
   --ok-fg: oklch(0.527 0.137 150.1); /* #15803d -- 5.02:1 */
   --warn-fg: oklch(0.555 0.146 49.0); /* #b45309 -- 5.02:1 */
@@ -107,6 +114,9 @@
      bright ones and the text twins are brighter still. */
   --ok: oklch(0.773 0.153 163.2); /* #34d399 */
   --warn: oklch(0.837 0.164 84.4); /* #fbbf24 */
+  /* Brighter than the light theme's, as every fill here is: the dark ground would
+     swallow the light value. 7.8:1 on the card. */
+  --online: oklch(0.72 0.17 150);
   --ok-fg: oklch(0.800 0.182 151.7); /* #4ade80 */
   --warn-fg: oklch(0.879 0.153 91.6); /* #fcd34d */
   --danger-fg: oklch(0.808 0.103 19.6); /* #fca5a5 */
@@ -152,6 +162,7 @@
   --color-chart-5: var(--chart-5);
   --color-ok: var(--ok);
   --color-warn: var(--warn);
+  --color-online: var(--online);
   --color-ok-fg: var(--ok-fg);
   --color-warn-fg: var(--warn-fg);
   --color-danger-fg: var(--danger-fg);
