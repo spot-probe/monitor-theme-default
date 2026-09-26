@@ -130,6 +130,19 @@ export function clockFor(hours: number): (ms: number) => string {
 }
 
 /**
+ * The stamp a chart's hover names its bucket by: "09/26 16:34", never the bare
+ * clock. A tick is placed by the line it sits under and the axis already carries
+ * the day; a tooltip is read on its own, and one that says "16:34" over a
+ * seven-day window leaves the reader to guess which of seven.
+ *
+ * The format the axis itself uses past a day, so the two cannot come to disagree
+ * about how a date is written.
+ */
+export function stamp(ms: number): string {
+  return MDHHMM.format(ms)
+}
+
+/**
  * Distro and CPU names as vendors write them carry mostly redundant text: a
  * codename in brackets, "GNU/Linux", "(R)", a core count already printed
  * separately. Stripping it is what makes the line fit.

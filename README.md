@@ -2,7 +2,8 @@
 
 [monitor](https://github.com/monitor-probe/monitor) 的内置默认主题，同时作为第三方主题的参考实现。
 
-React + Vite + shadcn/ui，黑白配色。
+React + Vite + shadcn/ui，浅色语义配色。状态由圆点与文字承载，徽章底色因此是中性的
+`bg-card` 加描边，而不是每种状态一个淡色底。
 
 ## 开发
 

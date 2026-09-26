@@ -1,7 +1,9 @@
 import { useRef, useState } from "react"
 import { Info } from "lucide-react"
 
+import { Swatch } from "@/components/ChartTooltip"
 import { Card } from "@/components/ui/card"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
 import {
   availabilityText, missingMinutes, minuteLabel, outageLength, segmentSpan, segmentText, segmentsFor,
@@ -94,7 +96,11 @@ export function AvailabilityCard({ data, hours }: { data: Availability; hours: n
   const down = missingMinutes(data.buckets)
   const recent = [...incidents].reverse()
   // One wording for the fault summary, used by the line under the title and by the
-  // bar's own label, so the two cannot drift apart.
+  // bar's own label, so the two cannot drift apart. When there are none the line
+  // is not drawn at all: no faults is the same statement as the 100% printed
+  // beside it -- the hub derives its outages from the missing minutes, and the
+  // ratio is exactly those minutes over the window -- so the row would repeat the
+  // figure in words and cost every healthy node a line of height.
   const faults = incidents.length === 0 ? "没有故障" : `${incidents.length} 次故障 · 共 ${outageLength(down)}`
   // Where the pointer or the keyboard is. `cursor` is the tab stop -- one segment
   // carries it, so the bar is one stop in the page's tab order rather than 168 of
@@ -134,22 +140,46 @@ export function AvailabilityCard({ data, hours }: { data: Availability; hours: n
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
         <h4 className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground">
           在线状态时间轴
-          <span
-            role="img"
-            title="按段统计：该段内每分钟都应有一条上报记录，缺一分钟即计为未上报；悬停或聚焦某一段可看该段的实际分钟数"
-            aria-label="按段统计：该段内每分钟都应有一条上报记录，缺一分钟即计为未上报；悬停或聚焦某一段可看该段的实际分钟数"
-            className="inline-flex"
-          >
-            <Info className="size-3" />
-          </span>
+          {/* A button, not the icon alone: it is focusable, so the explanation is
+              reachable without a pointer, and its 24px target is one a reader can
+              hit. The negative margin pulls it back onto the title's baseline,
+              leaving the glyph where a bare 12px icon sat. */}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                aria-label="统计口径与颜色说明"
+                className="-m-1.5 grid size-6 shrink-0 place-items-center rounded-full transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-ring"
+              >
+                <Info className="size-3.5" aria-hidden />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p className="leading-relaxed">
+                按段统计：每段内每分钟都应有一条上报记录，缺一分钟即计为未上报。悬停或聚焦某一段可看该段的实际分钟数。
+              </p>
+              {/* The four colours again, in the same shape the legend uses: the
+                  key belongs beside the rule that produced it, and a reader who
+                  opened this rather than reading the row below should not have to
+                  close it to find out what orange means. */}
+              <ul className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-muted-foreground">
+                {LEGEND.map((tone) => (
+                  <li key={tone} className="inline-flex items-center gap-1.5">
+                    <Swatch className={TONE_CLASS[tone]} />
+                    {TONE_LABEL[tone]}
+                  </li>
+                ))}
+              </ul>
+            </TooltipContent>
+          </Tooltip>
         </h4>
         <p className="text-sm">
           <span className="text-xs text-muted-foreground">{windowLabel(from, to)}正常率 </span>
           <span className="tnum font-medium">{availabilityText(fraction)}</span>
         </p>
-        <p className="w-full text-xs text-muted-foreground">
-          {faults}
-        </p>
+        {incidents.length > 0 && (
+          <p className="w-full text-xs text-muted-foreground">{faults}</p>
+        )}
       </div>
 
       {/* One segment per hour, each focusable and each carrying its own reading:
@@ -160,7 +190,7 @@ export function AvailabilityCard({ data, hours }: { data: Availability; hours: n
         ref={bar}
         role="group"
         aria-label={`在线状态时间轴，${windowLabel(from, to)}，正常率 ${availabilityText(fraction)}，` +
-          `${faults}。用左右方向键逐小时查看`}
+          `${faults}。用左右方向键逐段查看`}
         className="relative mt-3 flex h-6 gap-px"
         onMouseLeave={() => setActive(null)}
         onBlur={(e) => {
@@ -199,7 +229,7 @@ export function AvailabilityCard({ data, hours }: { data: Availability; hours: n
       <ul className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
         {LEGEND.map((tone) => (
           <li key={tone} className="inline-flex items-center gap-1.5">
-            <span aria-hidden className={cn("size-2 rounded-[2px]", TONE_CLASS[tone])} />
+            <Swatch className={TONE_CLASS[tone]} />
             {TONE_LABEL[tone]}
           </li>
         ))}
