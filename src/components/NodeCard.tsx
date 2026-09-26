@@ -66,10 +66,33 @@ export function deployed(node: Node) {
 // than this fork's brighter `--ok`, which is a meter fill and too light to carry
 // as a six-pixel dot on a white card. Upstream's third state is a second grey
 // here; the red is deliberate and predates the port.
+//
+// The absent dot is `--muted-foreground` at 80%: at full strength it would clear
+// the contrast bar by more than the online dot does and rank "never connected" as
+// the loudest state on the card. Measured against the chip's own tint: online
+// 3.34, offline 3.22, absent 3.32 (light) and 5.98 / 5.33 / 4.86 (dark).
 const DOT = {
   ok: "bg-online ring-2 ring-online/25",
   down: "bg-destructive ring-2 ring-destructive/20",
-  absent: "bg-muted-foreground/40",
+  absent: "bg-muted-foreground/80",
+} as const
+
+/**
+ * The wash behind the state chip, per state, out of the theme's own fill tokens.
+ *
+ * A tint of the state's own fill rather than a neutral surface: the card carries
+ * three states side by side, and the chip is what a reader scans for. The label
+ * stays `--foreground` rather than taking the `-fg` twin of its state, which is
+ * the obvious reach: `--danger-fg` measures 4.83:1 on the card, and any red tint
+ * worth seeing drops it to 4.13 -- under the 4.5 a 12px label needs. Measured on
+ * the chip itself, foreground is 14.33 / 13.58 / 15.68 (light) and 11.72 / 12.44
+ * / 14.53 (dark), so the state is carried by the tint and the dot, and the word
+ * stays readable. Upstream's own pill is a foreground label too.
+ */
+const CHIP = {
+  ok: "bg-ok/12 text-foreground",
+  down: "bg-destructive/12 text-foreground",
+  absent: "bg-muted text-foreground",
 } as const
 
 function stateOf(node: Node) {
@@ -88,27 +111,27 @@ export function statusLabel(node: Node) {
   return deployed(node) ? `离线 ${down >= 60 ? uptime(down) : ""}`.trim() : "未接入"
 }
 
-/** The dot on its own, for the line the card draws the name on. */
+/** The dot on its own, for the line the detail page draws the name on. */
 export function StatusDot({ node }: { node: Node }) {
-  return <span className={cn("size-1.5 shrink-0 rounded-full", DOT[stateOf(node)])} />
+  return <span aria-hidden className={cn("size-1.5 shrink-0 rounded-full", DOT[stateOf(node)])} />
 }
 
 /**
- * The dot and the duration welded into one chip, which is what the detail page
- * wants in its row of chips. The card wants them apart -- dot against the name,
- * duration on the muted line below -- so both shapes exist.
+ * The dot and the duration welded into one chip. It sits at the right end of the
+ * name's line on the card, which is where the reference panel puts it, and in the
+ * header of the detail page.
+ *
+ * `shrink-0` is half of the arrangement and the load-bearing half: the chip must
+ * survive a name long enough to truncate, so the name is the flex item that
+ * gives, not the chip. `overflow-visible` undoes the badge's own clipping, which
+ * would otherwise cut the halo off the dot.
  */
-export function Status({ node }: { node: Node }) {
+export function Status({ node, className }: { node: Node; className?: string }) {
+  const state = stateOf(node)
   return (
-    // Muted once it stops reporting: the figures on the page are genuine, merely
-    // no longer current. The dot keeps its colour, because "which of these is
-    // down" is the question the page is opened to answer.
-    //
-    // overflow-visible undoes the badge's own clipping, which would otherwise
-    // cut the halo off the dot.
     <Badge
       variant="outline"
-      className={cn("tnum shrink-0 gap-1.5 overflow-visible font-normal", !node.online && "text-muted-foreground")}
+      className={cn("tnum shrink-0 gap-1.5 overflow-visible border-transparent font-normal", CHIP[state], className)}
     >
       <StatusDot node={node} />
       {statusLabel(node)}
@@ -253,30 +276,28 @@ export function NodeCard({ node, onOpen }: { node: Node; onOpen: () => void }) {
       onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), onOpen())}
     >
       <div className="min-w-0">
-          {/* The dot rides on the name's line, which is where the reference panel
-              puts it. The name keeps that line almost entirely: sharing it with
-              the state chip left about eleven characters before the ellipsis and
-              cut the longer hostnames in half. */}
+          {/* Identity left, state right, one line each -- the reference panel's
+              arrangement. The name is the item that gives way: `min-w-0` on this
+              row and `truncate` on the name, against `shrink-0` on the chip, so a
+              hostname too long for the column is cut at the ellipsis while the
+              state stays whole. The chip used to live on the line below as bare
+              text, which cost nothing but read as part of the machine's shape
+              rather than as its state.
+              `ml-auto` rather than a spacer: with the flag between the name and
+              the chip, the chip's edge still lands on the card's right edge
+              whether or not the node has a country. */}
           <div className="flex min-w-0 items-center gap-1.5">
-            <StatusDot node={node} />
             <h3 className="truncate font-semibold">{node.name}</h3>
             <Country node={node} />
+            <Status node={node} className="ml-auto" />
           </div>
-          {/* With the chip folded into the line above, the muted second line has
-              the width to carry the state and the machine's shape together. */}
-          {/* The distro's own logo sits against the distro's name rather than at
-              the head of the line, because this line leads with the state -- a
-              penguin in front of "在线 3 小时" would read as the state's mark
-              rather than Debian's. The state keeps its width; what truncates on a
-              narrow card is the machine's shape, which is the part a reader can
-              afford to lose. */}
+          {/* The machine's shape, and nothing else now that the state has moved up.
+              The distro's own logo sits against the distro's name; what truncates
+              on a narrow card is the tail of this line, which is the part a reader
+              can afford to lose. */}
           <p className="mt-1 flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
-            <span className="shrink-0">{statusLabel(node)}</span>
             {node.os ? (
               <>
-                <span className="shrink-0" aria-hidden>
-                  ·
-                </span>
                 <OsIcon os={node.os} />
                 <span className="truncate">
                   {osName(node.os)}
@@ -285,7 +306,7 @@ export function NodeCard({ node, onOpen }: { node: Node; onOpen: () => void }) {
                 </span>
               </>
             ) : (
-              <span className="shrink-0">· 等待首次上报</span>
+              <span className="shrink-0">等待首次上报</span>
             )}
           </p>
           {/* Its own line rather than a fourth item on the one above: that line
