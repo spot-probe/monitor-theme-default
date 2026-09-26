@@ -61,6 +61,16 @@ const RANGES = [
 // these are the windows in which every ping remains on the chart.
 const RANGES_FOR = { resources: RANGES, latency: RANGES.filter((r) => r.hours <= 24) }
 
+/**
+ * How much of the past the availability timeline covers, in hours.
+ *
+ * A week, and fixed: the range selector above the charts picks what *they* draw,
+ * and a timeline that resized with it would answer a different question each time
+ * it moved. Seven days is also the most an anonymous caller may ask the hub for,
+ * and what the hub retains by default.
+ */
+const AVAILABILITY_HOURS = 168
+
 const AXIS = { stroke: "currentColor", fontSize: 11, tickLine: false, axisLine: false }
 
 // No grow-in animation: it would spend 1.5 s drawing a line across the panel on
@@ -195,19 +205,21 @@ export function NodeDetail({ node, onBack }: { node: Node; onBack: () => void })
   const [zoom, setZoom] = useState<[number, number] | null>(null)
   // Where the chart begins on screen, so its height can occupy the remainder.
   const [chartTop, setChartTop] = useState(0)
-  // The availability bar, fetched apart from the charts below. Both a node list
-  // and this page quote an availability figure, and the two must cover the same
-  // window or the page contradicts itself -- so this asks for the same 168 hours
-  // the card's `d7` is measured over, whatever range the charts are on. That is
-  // also all an anonymous caller may ask for. `null` while it is in flight, or if
-  // the hub is older than the feature, and no card is drawn for either.
+  // The availability timeline, fetched apart from the charts below: it covers a
+  // fixed week rather than the range picked above it, since the range selector is
+  // for the charts and a timeline that changed width with it would be a different
+  // question. A week is also all an anonymous caller may ask for, and it matches
+  // the hub's default retention. `null` while it is in flight, or if the hub is
+  // older than the feature, and no card is drawn for either.
   const [avail, setAvail] = useState<Availability | null>(null)
 
   useEffect(() => {
     let active = true
     // oxlint-disable-next-line react/set-state-in-effect
     setAvail(null)
-    api<{ availability: Availability | null }>(`/nodes/${node.id}/metrics?hours=168&series=availability`)
+    api<{ availability: Availability | null }>(
+      `/nodes/${node.id}/metrics?hours=${AVAILABILITY_HOURS}&series=availability`,
+    )
       .then((next) => { if (active) setAvail(next.availability ?? null) })
       // No error of its own: the bar is an addition to this screen, and the charts
       // below report a failed read in the page's own words. A refused or missing
@@ -408,7 +420,7 @@ export function NodeDetail({ node, onBack }: { node: Node; onBack: () => void })
         </dl>
       </Card>
 
-      {avail && <AvailabilityCard data={avail} />}
+      {avail && <AvailabilityCard data={avail} hours={AVAILABILITY_HOURS} />}
 
       {node.remark && (
         <Card className="gap-0 border-dashed bg-muted/40 p-4">
