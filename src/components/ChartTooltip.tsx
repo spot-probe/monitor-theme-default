@@ -78,6 +78,7 @@ export function ChartTooltip({
   payload,
   label,
   format,
+  formats,
   hint,
   nullText,
 }: {
@@ -85,6 +86,13 @@ export function ChartTooltip({
   payload?: PayloadItem[]
   label?: number | string
   format: (value: number) => string
+  /**
+   * Per-series units, by `dataKey`, for a panel whose series do not share one: the
+   * CPU panel draws a percentage and a load average against two axes, and a
+   * tooltip that printed "0.06%" beside the load would be calling it something it
+   * is not. `format` stays the default, so every other panel passes one function.
+   */
+  formats?: Record<string, (value: number) => string>
   hint?: (item: PayloadItem) => string | undefined
   /**
    * What a series with no reading is called. Only reached on a chart that turns
@@ -104,13 +112,14 @@ export function ChartTooltip({
     if (item.value === undefined) continue
     const value = typeof item.value === "number" && Number.isFinite(item.value) ? item.value : null
     if (value === null && nullText === undefined) continue
+    const series = formats?.[String(item.dataKey)] ?? format
     rows.push({
       // The gradient an area is filled with is a `url(#…)` reference, not a
       // colour, so the stroke is asked for first -- it is what the line is drawn
       // in and what the reader matches against.
       color: item.stroke ?? item.color ?? (typeof item.fill === "string" && !item.fill.startsWith("url(") ? item.fill : undefined),
       label: String(item.name ?? item.dataKey ?? ""),
-      value: value === null ? (nullText as string) : format(value),
+      value: value === null ? (nullText as string) : series(value),
       hint: value === null ? undefined : hint?.(item),
     })
   }

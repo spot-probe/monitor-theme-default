@@ -33,6 +33,12 @@ type Point = {
    * instead of a line along the floor claiming the machine swaps nothing.
    */
   swap_used?: number
+  /**
+   * The bucket's mean 1-minute load average, `null` for a bucket with no load
+   * samples. Absent on a hub older than the field, which is why the load curve is
+   * drawn only when some row carries one -- the same rule as `swap_used`.
+   */
+  load1?: number | null
 }
 // `latency` is the bucket's median round trip, null when every probe in it timed
 // out. `band` is the range its answers spanned, absent when they spanned nothing.
@@ -96,6 +102,13 @@ const WRAPPER = { transition: "none" }
 // 28px, placing a CPU spike and the network spike that caused it at different x.
 const Y_WIDTH = 68
 
+// The CPU panel is the only one with a second axis, and that axis costs the plot
+// width it stands on. The other three reserve the same width as a right margin, so
+// all four plots keep one x range and a CPU spike stays in the same column as the
+// network spike that caused it -- which is the whole reason `Y_WIDTH` is a single
+// number rather than one per panel.
+const LOAD_AXIS = 36
+
 // One hue per probe. Upstream shipped this in greyscale, where the dash pattern
 // had to carry what lightness could not -- and where, by its own note below, a
 // dotted line and a dashed one both collapsed into texture at the day range.
@@ -130,6 +143,11 @@ const pct = (v: number) => `${v.toFixed(1)}%`
 // number the formatter used to print dropped it, and forty of them in a row read
 // as a flat line of integers.
 const ms = (v: number) => `${Math.round(v * 10) / 10} ms`
+// Two decimals below ten: a load average is read as "0.06", and a fixed width is
+// what keeps the header and the tooltip from jumping as it moves.
+const load = (v: number) => (v < 10 ? v.toFixed(2) : v.toFixed(1))
+// The same reading on an axis tick, where "0.25" is a label and "0.25.00" is not.
+const loadTick = (v: number) => (v === 0 ? "0" : v < 1 ? `${Math.round(v * 100) / 100}` : `${Math.round(v * 10) / 10}`)
 
 /**
  * One chart, on its own surface. The panels used to lie flat on the page ground,
@@ -360,6 +378,11 @@ export function NodeDetail({ node, onBack }: { node: Node; onBack: () => void })
       cpu: axisTop(max((m) => m.cpu), 4, 10, 100),
       // Base 1024, so the steps are round in the unit `axisBytes` prints.
       rate: axisTop(max((m) => Math.max(m.net_rx, m.net_tx)), 1024, 1024),
+      // A load average has no capacity to be a fraction of, so it climbs a ladder
+      // too -- but its floor is a quarter rather than the CPU's 4%: these are
+      // counts, not percentages, and 0.25 is where a quiet single-core box sits.
+      // Absolute load rather than load per core, as the panel's own reading.
+      load: axisTop(max((m) => m.load1 ?? 0), 0.25, 10),
     }
   }, [metricRows])
 
@@ -380,6 +403,10 @@ export function NodeDetail({ node, onBack }: { node: Node; onBack: () => void })
     [node.swap_total, metricRows],
   )
   const memTop = hasSwap ? Math.max(node.mem_total, node.swap_total) : node.mem_total
+  // Same rule as swap, for the same reason: a hub older than the field sends no
+  // `load1`, and an empty right axis over a line along the floor would be a claim
+  // about a machine the hub never measured.
+  const hasLoad = metricRows.some((m) => typeof m.load1 === "number")
 
   const shownProbes = useMemo(
     () => pingSeries.filter((s) => !hiddenProbes.includes(s.id)),
@@ -706,20 +733,73 @@ export function NodeDetail({ node, onBack }: { node: Node; onBack: () => void })
         <p className="py-8 text-center text-sm text-muted-foreground">这段时间没有历史数据</p>
       ) : (
         <div className="space-y-5">
-          <Panel title="CPU" value={last && <Reading at={last.ts}>{pct(last.cpu)}</Reading>}>
+          <Panel
+            title={hasLoad ? "CPU 与负载" : "CPU"}
+            value={
+              last && (
+                <Reading at={last.ts}>
+                  {/* With a load line the header is also the key, as on the memory
+                      and rate panels. Without one -- a hub that sends no `load1`
+                      -- it goes back to the bare percentage, since a single series
+                      named after the panel's own title says nothing. */}
+                  {hasLoad && last.load1 !== undefined && last.load1 !== null ? (
+                    <span className="inline-flex flex-wrap items-center gap-x-2.5 gap-y-1">
+                      <HeaderSeries color="var(--color-chart-1)" name="CPU" value={pct(last.cpu)} />
+                      <HeaderSeries color="var(--color-chart-4)" name="负载" value={load(last.load1)} />
+                    </span>
+                  ) : (
+                    pct(last.cpu)
+                  )}
+                </Reading>
+              )
+            }
+          >
             <ResponsiveContainer>
-              <AreaChart data={metricRows}>
+              {/* Composed rather than an area chart: the load average is a second
+                  series against a second axis, since a count and a percentage
+                  cannot share one scale. No right margin here: the axis below
+                  stands in that space, and the panels without one reserve it as a
+                  margin so the four plots keep the same x range. */}
+              <ComposedChart data={metricRows} margin={{ right: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" className="stroke-muted" vertical={false} />
                 <XAxis {...timeAxis(metricRows)} />
-                <YAxis domain={[0, tops.cpu]} ticks={quarters(tops.cpu)} unit="%" width={Y_WIDTH} {...AXIS} />
+                <YAxis
+                  yAxisId="cpu"
+                  domain={[0, tops.cpu]}
+                  ticks={quarters(tops.cpu)}
+                  unit="%"
+                  width={Y_WIDTH}
+                  {...AXIS}
+                />
+                {hasLoad && (
+                  <YAxis
+                    yAxisId="load"
+                    orientation="right"
+                    domain={[0, tops.load]}
+                    ticks={quarters(tops.load)}
+                    tickFormatter={loadTick}
+                    width={LOAD_AXIS}
+                    {...AXIS}
+                  />
+                )}
                 <Tooltip
                   wrapperStyle={WRAPPER}
-                  content={<ChartTooltip format={pct} />}
+                  // The load row is the one series on this page measured in
+                  // something other than the panel's own unit.
+                  content={<ChartTooltip format={pct} formats={{ load1: load }} />}
+                  // The horizontal line follows the CPU, which is what the panel is
+                  // named for, and the chip carries the percentage with it.
                   cursor={<Crosshair domainTop={tops.cpu} format={pct} />}
                 />
                 <Wash id="cpu-wash" color="var(--color-chart-1)" />
-                <Area dataKey="cpu" stroke="var(--color-chart-1)" fill="url(#cpu-wash)" {...SERIES} />
-              </AreaChart>
+                <Area yAxisId="cpu" dataKey="cpu" name="CPU" stroke="var(--color-chart-1)" fill="url(#cpu-wash)" {...SERIES} />
+                {hasLoad && (
+                  // Bridged across a bucket the hub had no load for: before this
+                  // field existed every row is null, and a line broken at every
+                  // restart would be a shape the machine never had.
+                  <Line yAxisId="load" dataKey="load1" name="负载" stroke="var(--color-chart-4)" {...SERIES} connectNulls />
+                )}
+              </ComposedChart>
             </ResponsiveContainer>
           </Panel>
 
@@ -757,7 +837,7 @@ export function NodeDetail({ node, onBack }: { node: Node; onBack: () => void })
               {/* Composed rather than an area chart, since swap is a second line
                   on the same axis. A hub without the field sends none of it and
                   only the area is drawn. */}
-              <ComposedChart data={metricRows}>
+              <ComposedChart data={metricRows} margin={{ right: hasLoad ? LOAD_AXIS : 0 }}>
                 <CartesianGrid strokeDasharray="3 3" className="stroke-muted" vertical={false} />
                 <XAxis {...timeAxis(metricRows)} />
                 <YAxis domain={[0, memTop]} ticks={quarters(memTop)} tickFormatter={axisBytes} width={Y_WIDTH} {...AXIS} />
@@ -795,7 +875,7 @@ export function NodeDetail({ node, onBack }: { node: Node; onBack: () => void })
             }
           >
             <ResponsiveContainer>
-              <LineChart data={metricRows}>
+              <LineChart data={metricRows} margin={{ right: hasLoad ? LOAD_AXIS : 0 }}>
                 <CartesianGrid strokeDasharray="3 3" className="stroke-muted" vertical={false} />
                 <XAxis {...timeAxis(metricRows)} />
                 <YAxis domain={[0, tops.rate]} ticks={quarters(tops.rate)} tickFormatter={axisBytes} unit="/s" width={Y_WIDTH} {...AXIS} />
@@ -830,7 +910,7 @@ export function NodeDetail({ node, onBack }: { node: Node; onBack: () => void })
             }
           >
             <ResponsiveContainer>
-              <AreaChart data={metricRows}>
+              <AreaChart data={metricRows} margin={{ right: hasLoad ? LOAD_AXIS : 0 }}>
                 <CartesianGrid strokeDasharray="3 3" className="stroke-muted" vertical={false} />
                 <XAxis {...timeAxis(metricRows)} />
                 <YAxis domain={[0, node.disk_total]} ticks={quarters(node.disk_total)} tickFormatter={axisBytes} width={Y_WIDTH} {...AXIS} />

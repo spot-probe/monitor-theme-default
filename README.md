@@ -37,7 +37,7 @@ npm run dev
     └── index.html
 ```
 
-`theme.json` 的字段均为字符串：
+`theme.json` 除 `api` 外均为字符串：
 
 | 字段 | 含义 |
 |---|---|
@@ -46,9 +46,16 @@ npm run dev
 | `description` | 简介 |
 | `version` | 主题版本 |
 | `author` | 作者 |
-| `url` | 源码地址 |
+| `url` | 源码地址。指向 `https://github.com/<owner>/<repo>` 时后台才会给这个主题「从 GitHub 更新」 |
+| `api` | 数字，主题要求的**最低**主题 API 等级，省略为 1 |
 
-每个 tag 的 release 里的 `theme.tar.gz` 解开就是这个目录——hub 构建时嵌入的是同一个包。
+每个 tag 的 release 里的 `theme.tar.gz` 解开就是这个目录——hub 构建时嵌入的是同一个包，
+安装器首次安装时也会拉一份到 `themes/default/`，两者是同一个归档。
+
+`api` 只写**没有它就跑不起来**的等级，不要写「用到了哪些新字段」：hub 比主题旧的常见情形是
+主题少画一条线（例如没有 `swap_used` 就不画 Swap），那种降级比让整个公开页拒绝加载好得多。
+写高了 hub 会拒绝安装、也不会服务这份主题，后台会说明原因。等级表见 `monitor` 仓库的
+`frontend::THEME_API`。
 
 将目录复制到 hub 的 `--themes` 位置，在后台「主题」页切换，无需重启。
 
