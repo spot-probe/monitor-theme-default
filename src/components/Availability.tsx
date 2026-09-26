@@ -82,6 +82,9 @@ export function AvailabilityCard({ data, hours }: { data: Availability; hours: n
   const fraction = expected > 0 ? reported / expected : 1
   const down = missingMinutes(data.buckets)
   const recent = [...incidents].reverse()
+  // One wording for the fault summary, used by the line under the title and by the
+  // bar's own label, so the two cannot drift apart.
+  const faults = incidents.length === 0 ? "没有故障" : `${incidents.length} 次故障 · 共 ${outageLength(down)}`
   // Where the pointer or the keyboard is. `cursor` is the tab stop -- one segment
   // carries it, so the bar is one stop in the page's tab order rather than 168 of
   // them, and the arrow keys walk the rest.
@@ -134,7 +137,7 @@ export function AvailabilityCard({ data, hours }: { data: Availability; hours: n
           <span className="tnum font-medium">{availabilityText(fraction)}</span>
         </p>
         <p className="w-full text-xs text-muted-foreground">
-          {incidents.length === 0 ? "没有故障" : `${incidents.length} 次故障 · 共 ${outageLength(down)}`}
+          {faults}
         </p>
       </div>
 
@@ -146,7 +149,7 @@ export function AvailabilityCard({ data, hours }: { data: Availability; hours: n
         ref={bar}
         role="group"
         aria-label={`在线状态时间轴，${windowLabel(from, to)}，正常率 ${availabilityText(fraction)}，` +
-          `${incidents.length} 次故障，共 ${outageLength(down)}。用左右方向键逐小时查看`}
+          `${faults}。用左右方向键逐小时查看`}
         className="relative mt-3 flex h-6 gap-px"
         onMouseLeave={() => setActive(null)}
         onBlur={(e) => {
