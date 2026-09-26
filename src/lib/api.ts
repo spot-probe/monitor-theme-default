@@ -53,6 +53,13 @@ export type Node = {
   currency: string
   billing_cycle: string
   expires_at: string | null
+  /**
+   * Days until `expires_at` on the hub's calendar, negative once past, null
+   * without a date. Absent on a hub from before the field, in which case the
+   * page counts from the visitor's own clock -- which is the behaviour this
+   * field exists to replace.
+   */
+  expires_in?: number | null
   traffic_limit: number
   traffic_mode: string
   traffic_reset_day: number

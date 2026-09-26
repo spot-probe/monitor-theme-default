@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from "react"
-import { median } from "d3-array"
 import { ArrowLeft } from "lucide-react"
 import {
   Area, AreaChart, Brush, CartesianGrid, ComposedChart, Line, LineChart, ResponsiveContainer,
@@ -16,7 +15,8 @@ import { ChartTooltip, Crosshair, Swatch } from "@/components/ChartTooltip"
 import { Country, Status } from "@/components/NodeCard"
 import { api, type Node } from "@/lib/api"
 import {
-  axisBytes, axisTop, bytes, clockFor, quarters, cpuName, CYCLES, FOREVER, money, osName, rate, stamp, timeTicks,
+  axisBytes, axisTop, bytes, clockFor, despike, quarters, cpuName, CYCLES, FOREVER, money, osName, rate,
+  stamp, timeTicks,
 } from "@/lib/format"
 import type { Availability } from "@/lib/uptime"
 
@@ -219,31 +219,20 @@ function Wash({ id, color }: { id: string; color: string }) {
 }
 
 /**
- * Hampel filter (Hampel 1974; MATLAB ships it as `hampel`). A point more than
- * `sigmas` robust deviations from its window's median is replaced by that median,
- * while everything else passes through unchanged, which is what distinguishes it
- * from a rolling median or a moving average.
+ * How many samples of a probe's own series make up seven minutes of neighbours.
  *
- * 1.4826 rescales the median absolute deviation to a standard deviation for
- * normally distributed data; 3 sigma is the conventional cut.
+ * The window the filter judges against has to be a duration, not a count: the hub
+ * buckets a window to the `points` asked for below, so the same day arrives as
+ * one-minute buckets on a desktop and two-minute ones on a phone, and a fixed
+ * count would clip a five-minute stall on the first while keeping it on the
+ * second. The smallest gap is the bucket interval; a longer one is the node being
+ * offline. Odd, so the window has a middle, and bounded so a sparse probe still
+ * has neighbours and a dense one does not pay for a wide sort.
  */
-function despike(points: PingPoint[], window = 7, sigmas = 3): PingPoint[] {
-  const half = window >> 1
-  // ponytail: recomputes the window per point. A few thousand samples is
-  // negligible; substitute a rolling structure if a chart ever needs 100k.
-  return points.map((p, i) => {
-    // A timeout is a gap rather than a high reading: neither smoothed, nor counted
-    // towards what its neighbours are compared against.
-    if (p.latency === null) return p
-    const near = points
-      .slice(Math.max(0, i - half), i + half + 1)
-      .map((x) => x.latency)
-      .filter((v) => v !== null)
-    const mid = median(near) ?? p.latency
-    const mad = median(near.map((v) => Math.abs(v - mid))) ?? 0
-    const outlier = mad > 0 && Math.abs(p.latency - mid) > sigmas * 1.4826 * mad
-    return outlier ? { ...p, latency: mid } : p
-  })
+function despikeWindow(points: { ts: number }[]): number {
+  let step = Infinity
+  for (let i = 1; i < points.length; i++) step = Math.min(step, points[i].ts - points[i - 1].ts)
+  return Math.min(15, Math.max(3, Math.round(420 / step) | 1))
 }
 
 function Fact({ label, value }: { label: string; value?: string | number | null }) {
@@ -432,15 +421,34 @@ export function NodeDetail({ node, onBack }: { node: Node; onBack: () => void })
       { ts: number } & Record<string, number | [number, number] | null>
     >()
     for (const s of pingSeries) {
-      const smoothed = despike(s.points)
+      const window = despikeWindow(s.points)
+      const smoothed = despike(s.points.map((p) => p.latency), window)
+      // The band spans the same outliers as the line, and with one probe on screen
+      // it is what the axis is fitted to, so it is clipped alongside it rather
+      // than left to pull the axis back open. The latency fills the buckets that
+      // carry no band, keeping each filter's window dense.
+      const lo = despike(s.points.map((p) => p.band?.[0] ?? p.latency), window)
+      const hi = despike(s.points.map((p) => p.band?.[1] ?? p.latency), window)
       s.points.forEach((p, i) => {
         const row = rows.get(p.ts) ?? { ts: p.ts * 1_000 }
         row[`t${s.id}`] = p.latency
-        row[`s${s.id}`] = smoothed[i].latency
+        row[`s${s.id}`] = smoothed[i]
         row[`l${s.id}`] = p.loss ?? 0
-        // Raw, never despiked: the band exists to show what the line omits, and
-        // smoothing it would omit the same points.
-        row[`b${s.id}`] = p.band ?? null
+        // A bucket with a single answer carries no band and spans only that
+        // answer. Left null, `connectNulls` would bridge the hours between the few
+        // buckets that have one: 2 to 10 of 1,440 in a day, the widest gap 803
+        // minutes, drawn as one large wedge.
+        row[`b${s.id}`] = p.band ?? (p.latency === null ? null : [p.latency, p.latency])
+        // Taken as the span of three filtered series rather than a pair: the two
+        // edges are filtered independently, so a bucket that answered slightly
+        // faster than usual can trip the low edge alone and come back above the
+        // high one -- [180, 178] against a line of 176, drawn backwards with the
+        // line outside it.
+        const [low, high] = [lo[i], hi[i]]
+        row[`c${s.id}`] =
+          low === null || high === null
+            ? null
+            : [Math.min(low, high, smoothed[i] ?? low), Math.max(low, high, smoothed[i] ?? high)]
         rows.set(p.ts, row)
       })
     }
@@ -649,7 +657,7 @@ export function NodeDetail({ node, onBack }: { node: Node; onBack: () => void })
                       shownProbes.map((s) => (
                         <Area
                           key={`band${s.id}`}
-                          dataKey={`b${s.id}`}
+                          dataKey={`${smooth ? "c" : "b"}${s.id}`}
                           stroke="none"
                           fill={style(s.id)}
                           fillOpacity={0.16}
