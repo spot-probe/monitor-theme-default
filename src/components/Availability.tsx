@@ -4,8 +4,8 @@ import { Info } from "lucide-react"
 import { Card } from "@/components/ui/card"
 import { cn } from "@/lib/utils"
 import {
-  availabilityText, missingMinutes, minuteLabel, outageLength, segmentText, segmentsFor, segmentTone,
-  stillDown, TONE_CLASS, TONE_LABEL, windowLabel,
+  availabilityText, missingMinutes, minuteLabel, outageLength, segmentSpan, segmentText, segmentsFor,
+  segmentTone, stepHours, stillDown, TONE_CLASS, TONE_LABEL, windowLabel,
   type Availability, type Incident, type Segment, type Tone,
 } from "@/lib/uptime"
 
@@ -45,15 +45,22 @@ function Outage({ incident, to }: { incident: Incident; to: number }) {
   )
 }
 
-/** What one segment says, over the bar. The same words reach a screen reader. */
-function Hover({ segment, left }: { segment: Segment; left: string }) {
+/**
+ * What one segment says, over the bar. The same words reach a screen reader.
+ *
+ * `step` is the segment's width in hours, so a three-hour or day-wide segment is
+ * named by the stretch it covers rather than by the instant it starts at; the
+ * minute count underneath is exact either way, which is what keeps the coarse bar
+ * from hiding a twelve-minute outage inside a day.
+ */
+function Hover({ segment, step, left }: { segment: Segment; step: number; left: string }) {
   return (
     <div
       role="tooltip"
       style={{ left }}
       className="pointer-events-none absolute bottom-full z-10 mb-1.5 w-56 rounded-md border bg-popover px-2 py-1.5 text-xs shadow-pop"
     >
-      <div className="tnum font-medium">{minuteLabel(segment.ts)}</div>
+      <div className="tnum font-medium">{segmentSpan(segment.ts, step)}</div>
       <div className="text-muted-foreground">{segmentText(segment)}</div>
     </div>
   )
@@ -74,6 +81,10 @@ function Hover({ segment, left }: { segment: Segment; left: string }) {
 export function AvailabilityCard({ data, hours }: { data: Availability; hours: number }) {
   const { from, to, incidents } = data
   const segments = segmentsFor(data, hours)
+  // The width of one segment, in hours, for labelling it. Coarser than an hour
+  // whenever the window is long enough that hourly strips would be unreadable:
+  // a week is 3-hour segments, a month is 12-hour ones.
+  const step = stepHours(hours)
   // Only the measured buckets count towards the figure: the padded hours carry an
   // `m` of their own but nothing was expected of them, and dividing by them would
   // report a node added yesterday as broken.
@@ -125,8 +136,8 @@ export function AvailabilityCard({ data, hours }: { data: Availability; hours: n
           在线状态时间轴
           <span
             role="img"
-            title="按小时统计：该小时内每分钟都应有一条上报记录，缺一分钟即计为未上报"
-            aria-label="按小时统计：该小时内每分钟都应有一条上报记录，缺一分钟即计为未上报"
+            title="按段统计：该段内每分钟都应有一条上报记录，缺一分钟即计为未上报；悬停或聚焦某一段可看该段的实际分钟数"
+            aria-label="按段统计：该段内每分钟都应有一条上报记录，缺一分钟即计为未上报；悬停或聚焦某一段可看该段的实际分钟数"
             className="inline-flex"
           >
             <Info className="size-3" />
@@ -161,7 +172,7 @@ export function AvailabilityCard({ data, hours }: { data: Availability; hours: n
             key={s.ts}
             role="img"
             tabIndex={i === cursor ? 0 : -1}
-            aria-label={`${minuteLabel(s.ts)}，${segmentText(s)}`}
+            aria-label={`${segmentSpan(s.ts, step)}，${segmentText(s)}`}
             onMouseEnter={() => setActive(i)}
             onFocus={() => {
               setActive(i)
@@ -177,7 +188,7 @@ export function AvailabilityCard({ data, hours }: { data: Availability; hours: n
             )}
           />
         ))}
-        {shown && <Hover segment={shown} left={left} />}
+        {shown && <Hover segment={shown} step={step} left={left} />}
       </div>
 
       <div className="mt-1 flex justify-between text-xs text-muted-foreground">

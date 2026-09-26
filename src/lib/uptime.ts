@@ -93,17 +93,45 @@ export function availabilityText(fraction: number): string {
 }
 
 /**
- * One segment of the timeline: an hour the hub measured, or an hour of the period
- * it had nothing to measure.
+ * One segment of the timeline: a stretch the hub measured, or one of the period it
+ * had nothing to measure.
  *
- * `m` is the minutes the hour was expected to cover -- 60, except at the ends of
- * the window where the hour is partial -- and `n` the minutes actually reported.
+ * `m` is the minutes the segment was expected to cover -- its width in minutes,
+ * except at the ends of the window where it is partial -- and `n` the minutes
+ * actually reported. Both are minutes whatever the segment's width, which is what
+ * lets the tooltip say "上报 180/180 分钟" for a three-hour segment and
+ * "上报 1440/1440 分钟" for a day.
+ *
  * `known` is false for the stretch before the node's history begins, whether
  * because the node was added later or because the hub no longer retains that far
  * back: either way there are no minutes to count, which is a different answer
  * from "every minute was missed" and has to be drawn as one.
  */
 export type Segment = { ts: number; n: number; m: number; known: boolean }
+
+/**
+ * How wide one segment is, in hours, for a window of `hours`.
+ *
+ * The rule is a *segment count*, not a bucket size. An hour per segment is right
+ * for a day and absurd for a month: a week drawn hourly is 168 strips, which on a
+ * card a little over 300px wide is under two pixels each -- a texture, not a
+ * chart. Sixty is the top of the band that still reads at a glance; the exact
+ * minutes are in the tooltip whatever the width, so the segments only have to
+ * stay countable, and coarsening them costs nothing that the hover does not give
+ * back.
+ *
+ * The ladder is whole hours only, and each rung divides the next: 1, 2, 3, 6, 12,
+ * 24. A window that is not a multiple of its rung simply ends with a partial
+ * segment, which the hub's own `m` already describes.
+ */
+const STEPS = [1, 2, 3, 6, 12, 24] as const
+
+/** The band the segment count is kept inside: see `stepHours`. */
+const MOST = 60
+
+export function stepHours(hours: number): number {
+  return STEPS.find((s) => hours / s <= MOST) ?? STEPS[STEPS.length - 1]
+}
 
 /**
  * Which of the four states a segment is in.
@@ -124,24 +152,43 @@ export function segmentText(s: Segment): string {
 }
 
 /**
- * The bar's segments: the hours the hub measured, preceded by the hours of the
+ * The bar's segments: the stretch the hub measured, preceded by the stretch of the
  * period it did not, so the bar always covers the span its title claims.
  *
- * The padding is cut on the same absolute hour grid the hub buckets on, and stops
- * at the first measured bucket rather than at `data.from`, because that first
- * bucket may begin before `from` (it covers the part of its hour the node was
- * alive for) and two segments over one hour would be a lie about the width.
+ * The hub answers in hours whatever the window, so this groups those hours into
+ * `stepHours(hours)`-wide segments. Both the grouping and the padding are cut on
+ * the same absolute grid -- whole hours, and each rung a multiple of the one below
+ * it -- so a segment never straddles a boundary and the two halves line up.
+ *
+ * The padding stops at the first measured segment rather than at `data.from`,
+ * because that segment may begin before `from` (it covers the part of its width
+ * the node was alive for) and two segments over one stretch would be a lie about
+ * the width.
  *
  * `hours` is what the page asked the hub for; the hub clamps its answer to the
  * node's life and to what it retains, and this is what puts the clamped part back
- * so a node added three days ago does not look like it has been up for a week.
+ * so a node added a day ago does not look like it has been up for a week.
  */
 export function segmentsFor(data: Availability, hours: number): Segment[] {
-  const start = Math.floor((data.to - hours * 3_600) / 3_600) * 3_600
-  const measured: Segment[] = data.buckets.map((b) => ({ ...b, known: true }))
+  const step = stepHours(hours)
+  const width = step * 3_600
+  const measured: Segment[] = []
+  for (const b of data.buckets) {
+    const ts = Math.floor(b.ts / width) * width
+    const last = measured[measured.length - 1]
+    // `m` accumulates too: a partial hour at either end of the window carries
+    // fewer than 60 minutes, and the segment's denominator has to be the sum.
+    if (last && last.ts === ts) {
+      last.n += b.n
+      last.m += b.m
+    } else {
+      measured.push({ ts, n: b.n, m: b.m, known: true })
+    }
+  }
+  const start = Math.floor((data.to - hours * 3_600) / width) * width
   const first = measured[0]?.ts ?? data.to
   const padding: Segment[] = []
-  for (let ts = start; ts < first; ts += 3_600) padding.push({ ts, n: 0, m: 60, known: false })
+  for (let ts = start; ts < first; ts += width) padding.push({ ts, n: 0, m: step * 60, known: false })
   return [...padding, ...measured]
 }
 
@@ -159,6 +206,28 @@ export function minuteLabel(minute: number): string {
   const hh = String(at.getHours()).padStart(2, "0")
   const mm = String(at.getMinutes()).padStart(2, "0")
   return `${at.getMonth() + 1}月${at.getDate()}日 ${hh}:${mm}`
+}
+
+/**
+ * The stretch one segment covers, for its tooltip: "9月22日 03:00" for an hour,
+ * "9月22日 00:00 – 03:00" for three, "9月22日 – 9月23日" for a day.
+ *
+ * A day is written as two dates rather than "00:00 – 00:00", which reads as no
+ * time at all; everything shorter keeps the clock, because the hour it starts at
+ * is how a reader places it against the charts underneath.
+ */
+export function segmentSpan(ts: number, hours: number): string {
+  if (hours <= 1) return minuteLabel(ts)
+  const end = new Date((ts + hours * 3_600) * 1_000)
+  const hh = String(end.getHours()).padStart(2, "0")
+  const mm = String(end.getMinutes()).padStart(2, "0")
+  if (hours >= 24) {
+    // The instant the segment ends at, which for a day is the next day: a day
+    // written as "9月22日 – 9月23日" covers the 22nd, not two names for one date.
+    const end = new Date((ts + hours * 3_600) * 1_000)
+    return `${minuteLabel(ts).split(" ")[0]} – ${end.getMonth() + 1}月${end.getDate()}日`
+  }
+  return `${minuteLabel(ts)} – ${hh}:${mm}`
 }
 
 /**
