@@ -38,12 +38,32 @@ export type Availability = {
 
 /**
  * The fill behind each state. Kept beside the functions that pick a state rather
- * than in the two components that draw one, because the card's dot and the bar's
- * segments must be the same three colours or the page says two things at once.
- * The hues are the ones the rest of the page already uses for state -- the meters
- * and the packet-loss badges -- so a colour means one thing wherever it appears.
+ * than in the components that draw one, because the timeline's segments and its
+ * legend must be the same colours or the page says two things at once. The hues
+ * are the ones the rest of the page already uses for state -- the meters and the
+ * packet-loss badges -- so a colour means one thing wherever it appears.
+ *
+ * `unknown` is the fourth state and not a shade of `down`: an hour the hub had no
+ * rows for *because the node did not exist yet* is not an outage, and drawing it
+ * red would invent downtime. It is the grey the page already uses for a node that
+ * never connected.
  */
-export const TONE_CLASS = { ok: "bg-ok", warn: "bg-warn", down: "bg-destructive" } as const
+export const TONE_CLASS = {
+  ok: "bg-ok",
+  warn: "bg-warn",
+  down: "bg-destructive",
+  unknown: "bg-muted-foreground/25",
+} as const
+
+export type Tone = keyof typeof TONE_CLASS
+
+/** What each state is called, in the legend and in a segment's own label. */
+export const TONE_LABEL: Record<Tone, string> = {
+  ok: "正常",
+  warn: "部分异常",
+  down: "离线",
+  unknown: "无数据",
+}
 
 /**
  * The span a window covers, in the unit the page says it in.
@@ -73,40 +93,69 @@ export function availabilityText(fraction: number): string {
 }
 
 /**
- * Which of the three states a bar segment is in, and the same answer the card's
- * dot takes. Green when every expected minute reported, amber when some were
- * missed, red when none were -- a partial first or last hour is green so long as
- * it is full, which is why `n` is compared against the bucket's own `m` and not
- * against 60.
- */
-export function barTone(n: number, m: number): "ok" | "warn" | "down" {
-  if (n <= 0 || m <= 0) return "down"
-  return n >= m ? "ok" : "warn"
-}
-
-/**
- * The same three states for a whole-window fraction, for the card's line.
+ * One segment of the timeline: an hour the hub measured, or an hour of the period
+ * it had nothing to measure.
  *
- * The thresholds are a judgement and they live here with names rather than in
- * the markup: 99.5% is about where a week's uptime stops reading as "all of it",
- * 90% is where a node is plainly unreliable.
+ * `m` is the minutes the hour was expected to cover -- 60, except at the ends of
+ * the window where the hour is partial -- and `n` the minutes actually reported.
+ * `known` is false for the stretch before the node's history begins, whether
+ * because the node was added later or because the hub no longer retains that far
+ * back: either way there are no minutes to count, which is a different answer
+ * from "every minute was missed" and has to be drawn as one.
  */
-export function fractionTone(fraction: number): "ok" | "warn" | "down" {
-  if (fraction >= 0.995) return "ok"
-  return fraction >= 0.9 ? "warn" : "down"
+export type Segment = { ts: number; n: number; m: number; known: boolean }
+
+/**
+ * Which of the four states a segment is in.
+ *
+ * A partial first or last hour is green so long as it is full, which is why `n`
+ * is compared against the segment's own `m` and not against 60.
+ */
+export function segmentTone(s: Segment): Tone {
+  if (!s.known) return "unknown"
+  if (s.m <= 0 || s.n <= 0) return "down"
+  return s.n >= s.m ? "ok" : "warn"
+}
+
+/** What one segment says, in the words the tooltip and a screen reader share. */
+export function segmentText(s: Segment): string {
+  if (!s.known) return `${TONE_LABEL.unknown} · 该时段没有上报记录`
+  return `${TONE_LABEL[segmentTone(s)]} · 上报 ${s.n}/${s.m} 分钟`
 }
 
 /**
- * "8月20日 14:02" -- the hour is what a reader places an outage by, and the year
- * is noise on a window at most a month wide.
+ * The bar's segments: the hours the hub measured, preceded by the hours of the
+ * period it did not, so the bar always covers the span its title claims.
+ *
+ * The padding is cut on the same absolute hour grid the hub buckets on, and stops
+ * at the first measured bucket rather than at `data.from`, because that first
+ * bucket may begin before `from` (it covers the part of its hour the node was
+ * alive for) and two segments over one hour would be a lie about the width.
+ *
+ * `hours` is what the page asked the hub for; the hub clamps its answer to the
+ * node's life and to what it retains, and this is what puts the clamped part back
+ * so a node added three days ago does not look like it has been up for a week.
+ */
+export function segmentsFor(data: Availability, hours: number): Segment[] {
+  const start = Math.floor((data.to - hours * 3_600) / 3_600) * 3_600
+  const measured: Segment[] = data.buckets.map((b) => ({ ...b, known: true }))
+  const first = measured[0]?.ts ?? data.to
+  const padding: Segment[] = []
+  for (let ts = start; ts < first; ts += 3_600) padding.push({ ts, n: 0, m: 60, known: false })
+  return [...padding, ...measured]
+}
+
+/**
+ * "8月20日 14:02" -- the hour is what a reader places an outage, or an hour of the
+ * timeline, by. The year is noise on a window at most a month wide.
  *
  * Built from the date's own parts rather than through `Intl`: the numeric
  * month/day pattern resolves to "8/20 14:02" under this Node's ICU and to
  * something else under another's, and a page whose date format depends on the
  * reader's ICU version is a page that changes shape for no reason.
  */
-export function incidentStamp(start: number): string {
-  const at = new Date(start * 1_000)
+export function minuteLabel(minute: number): string {
+  const at = new Date(minute * 1_000)
   const hh = String(at.getHours()).padStart(2, "0")
   const mm = String(at.getMinutes()).padStart(2, "0")
   return `${at.getMonth() + 1}月${at.getDate()}日 ${hh}:${mm}`

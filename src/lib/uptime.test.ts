@@ -6,8 +6,8 @@
 //
 // Nothing imports it, so the bundle never includes it.
 import {
-  availabilityText, barTone, fractionTone, incidentStamp, missingMinutes, outageLength, stillDown,
-  windowLabel, type Incident,
+  availabilityText, missingMinutes, minuteLabel, outageLength, segmentsFor, segmentText, segmentTone,
+  stillDown, TONE_LABEL, windowLabel, type Availability, type Incident, type Segment,
 } from "./uptime.ts"
 
 let failed = 0
@@ -44,23 +44,55 @@ eq(availabilityText(0), "0.00%", "从未上报")
 eq(availabilityText(Number.NaN), "—", "缺失值不写数字")
 eq(availabilityText(1.4), "100%", "超过一不打印 140%")
 
-// barTone: against the bucket's own expected minutes, so a partial first or last
-// hour is green when it is full.
-eq(barTone(60, 60), "ok", "整小时满")
-eq(barTone(44, 44), "ok", "残桶满也是绿")
-eq(barTone(58, 60), "warn", "缺两分钟是黄")
-eq(barTone(1, 60), "warn", "只报了一分钟也是黄")
-eq(barTone(0, 60), "down", "整小时没报是红")
-eq(barTone(0, 0), "down", "空桶不画成绿")
-eq(barTone(5, 0), "down", "不可能的组合不画成绿")
+// segmentTone: four states, and the partial-hour rule. A partial first or last
+// hour is green when it is full, which is why `n` is compared against the
+// segment's own `m` and not against 60.
+const seg = (n: number, m: number, known = true): Segment => ({ ts: T, n, m, known })
+eq(segmentTone(seg(60, 60)), "ok", "整小时满")
+eq(segmentTone(seg(44, 44)), "ok", "残桶满也是绿")
+eq(segmentTone(seg(58, 60)), "warn", "缺两分钟是黄")
+eq(segmentTone(seg(1, 60)), "warn", "只报了一分钟也是黄")
+eq(segmentTone(seg(0, 60)), "down", "整小时没报是红")
+eq(segmentTone(seg(0, 0)), "down", "空桶不画成绿")
+eq(segmentTone(seg(5, 0)), "down", "不可能的组合不画成绿")
+// 无数据 is not a shade of 离线: an hour before the node existed is not an outage.
+eq(segmentTone(seg(0, 60, false)), "unknown", "节点不存在的那一小时是无数据而不是离线")
+eq(segmentTone(seg(60, 60, false)), "unknown", "unknown 永远压过 n/m")
 
-// fractionTone: the card's three states, at the thresholds the bar uses.
-eq(fractionTone(1), "ok", "满勤")
-eq(fractionTone(0.995), "ok", "阈值上")
-eq(fractionTone(0.9949), "warn", "阈值下一点")
-eq(fractionTone(0.9), "warn", "九成")
-eq(fractionTone(0.8999), "down", "九成以下")
-eq(fractionTone(0), "down", "从未上报")
+// segmentText: the words the tooltip and a screen reader share.
+eq(segmentText(seg(60, 60)), "正常 · 上报 60/60 分钟", "正常段的读法")
+eq(segmentText(seg(24, 24)), "正常 · 上报 24/24 分钟", "部分小时按它自己的 m 读")
+eq(segmentText(seg(48, 60)), "部分异常 · 上报 48/60 分钟", "部分异常段的读法")
+eq(segmentText(seg(0, 60)), "离线 · 上报 0/60 分钟", "离线段的读法")
+eq(segmentText(seg(0, 60, false)), "无数据 · 该时段没有上报记录", "无数据段不报 n/m")
+eq(Object.keys(TONE_LABEL).length, 4, "图例四个状态")
+
+// segmentsFor: the bar always covers the period it claims. The hub clamps its
+// answer to the node's life, so the front has to be put back as 无数据 -- and the
+// padding must stop at the first measured bucket, which may begin before `from`.
+{
+  const to = T
+  const buckets = [
+    { ts: to - 7_200, n: 60, m: 60 },
+    { ts: to - 3_600, n: 30, m: 60 },
+  ]
+  const full: Availability = { from: to - 7_200, to, buckets, incidents: [] }
+  const fullSegs = segmentsFor(full, 2)
+  eq(fullSegs.length, 2, "窗口已有全部数据时不补任何段")
+  eq(fullSegs.every((s) => s.known), true, "也不该有 unknown")
+
+  // Three hours asked for, one hour of history: two hours of 无数据 in front.
+  const short: Availability = { from: to - 3_600, to, buckets: [buckets[1]], incidents: [] }
+  const shortSegs = segmentsFor(short, 3)
+  eq(shortSegs.length, 3, "补到请求的宽度")
+  eq(shortSegs.slice(0, 2).every((s) => !s.known && s.m === 60), true, "补的是整小时的无数据")
+  eq(shortSegs[2].known, true, "最后一段是实测的")
+  eq(shortSegs[2].ts, to - 3_600, "补齐的边界与第一个实测桶对齐，不重叠")
+
+  const none: Availability = { from: to, to, buckets: [], incidents: [] }
+  eq(segmentsFor(none, 2).length, 2, "完全没有数据时整条都是无数据")
+  eq(segmentsFor(none, 2).every((s) => segmentTone(s) === "unknown"), true, "且都是 unknown")
+}
 
 // outageLength: two units at most, never a zero one.
 eq(outageLength(1), "1 分钟", "一分钟")
@@ -72,10 +104,10 @@ eq(outageLength(1_440), "1 天", "整天")
 eq(outageLength(1_500), "1 天 1 小时", "一天零一小时")
 eq(outageLength(2_880), "2 天", "两天")
 
-// incidentStamp: the format the page prints, built from date parts so it does not
+// minuteLabel: the format the page prints, built from date parts so it does not
 // move with the reader's ICU.
-eq(incidentStamp(T).includes("月") && incidentStamp(T).includes("日 "), true, "写成 X月X日 HH:MM")
-eq(/^\d{1,2}月\d{1,2}日 \d{2}:\d{2}$/.test(incidentStamp(T)), true, `时间戳格式（得到 ${incidentStamp(T)}）`)
+eq(minuteLabel(T).includes("月") && minuteLabel(T).includes("日 "), true, "写成 X月X日 HH:MM")
+eq(/^\d{1,2}月\d{1,2}日 \d{2}:\d{2}$/.test(minuteLabel(T)), true, `时间戳格式（得到 ${minuteLabel(T)}）`)
 
 // stillDown: an outage that reaches the window's end may or may not have
 // recovered; the page says "至今" only there.

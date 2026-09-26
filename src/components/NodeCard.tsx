@@ -10,7 +10,6 @@ import { Card } from "@/components/ui/card"
 import { Meter } from "@/components/Meter"
 import type { Node } from "@/lib/api"
 import { bytes, CYCLES, daysUntil, FOREVER, money, osName, pair, percent, rate, uptime } from "@/lib/format"
-import { availabilityText, fractionTone, TONE_CLASS, windowLabel } from "@/lib/uptime"
 import { cn } from "@/lib/utils"
 
 // Emitted as files and fetched on first use, so a page carries only the flags its
@@ -67,10 +66,13 @@ export function deployed(node: Node) {
 // as a six-pixel dot on a white card. Upstream's third state is a second grey
 // here; the red is deliberate and predates the port.
 //
-// The absent dot is `--muted-foreground` at 80%: at full strength it would clear
-// the contrast bar by more than the online dot does and rank "never connected" as
-// the loudest state on the card. Measured against the chip's own tint: online
-// 3.34, offline 3.22, absent 3.32 (light) and 5.98 / 5.33 / 4.86 (dark).
+// The dot is now the only thing on the chip that carries the state, so its
+// contrast is the whole signal. The absent dot is `--muted-foreground` at 80%: at
+// full strength it would clear the bar by more than the online dot does and rank
+// "never connected" as the loudest state on the card. Measured against the chip's
+// own `--tag` surface, online / offline / absent: 3.24 / 3.30 / 3.06 (light) and
+// 6.24 / 5.24 / 4.24 (dark) -- all over the 3:1 a graphical object needs, with the
+// absent dot the faintest on both grounds.
 const DOT = {
   ok: "bg-online ring-2 ring-online/25",
   down: "bg-destructive ring-2 ring-destructive/20",
@@ -78,22 +80,24 @@ const DOT = {
 } as const
 
 /**
- * The wash behind the state chip, per state, out of the theme's own fill tokens.
+ * The wash behind the state chip, the same for all three states.
  *
- * A tint of the state's own fill rather than a neutral surface: the card carries
- * three states side by side, and the chip is what a reader scans for. The label
- * stays `--foreground` rather than taking the `-fg` twin of its state, which is
- * the obvious reach: `--danger-fg` measures 4.83:1 on the card, and any red tint
- * worth seeing drops it to 4.13 -- under the 4.5 a 12px label needs. Measured on
- * the chip itself, foreground is 14.33 / 13.58 / 15.68 (light) and 11.72 / 12.44
- * / 14.53 (dark), so the state is carried by the tint and the dot, and the word
- * stays readable. Upstream's own pill is a foreground label too.
+ * `--tag` is this theme's tinted-pill surface -- the token whose own comment
+ * calls it "the pill behind a country or a tag: a tint, not a second accent" --
+ * so the chip speaks the same surface language as the rest of the page, in both
+ * modes (`#eaf0fe` light, `#1d2942` dark). The state is no longer carried by the
+ * fill: the dot and the word do that, which is what was asked for. `--accent` was
+ * the other candidate and is the *hover* surface of ghost controls, so a static
+ * chip wearing it would read as a control waiting to be clicked; `bg-primary/10`
+ * would be a tint of the action colour, and `--tag` exists for exactly this job.
+ *
+ * The label stays `--foreground` rather than taking `--tag-foreground`, the
+ * documented twin for this surface: that one does pass (5.36:1), but a neutral
+ * label leaves the fill as the only chromatic thing on the chip, and the coloured
+ * twins of state fills measure 4.13:1 once they sit on a tint of their own hue.
+ * Measured on the chip itself: 13.91:1 light, 12.24:1 dark.
  */
-const CHIP = {
-  ok: "bg-ok/12 text-foreground",
-  down: "bg-destructive/12 text-foreground",
-  absent: "bg-muted text-foreground",
-} as const
+const CHIP = "bg-tag text-foreground"
 
 function stateOf(node: Node) {
   if (node.online) return "ok"
@@ -127,11 +131,10 @@ export function StatusDot({ node }: { node: Node }) {
  * would otherwise cut the halo off the dot.
  */
 export function Status({ node, className }: { node: Node; className?: string }) {
-  const state = stateOf(node)
   return (
     <Badge
       variant="outline"
-      className={cn("tnum shrink-0 gap-1.5 overflow-visible border-transparent font-normal", CHIP[state], className)}
+      className={cn("tnum shrink-0 gap-1.5 overflow-visible border-transparent font-normal", CHIP, className)}
     >
       <StatusDot node={node} />
       {statusLabel(node)}
@@ -191,36 +194,6 @@ function OsIcon({ os }: { os: string }) {
   )
 }
 
-/**
- * How much of the recent past this node was actually reporting in.
- *
- * The window is the one the hub measured, printed from `from7`/`to` rather than
- * assumed to be a week: it is clamped to the node's own life and to the history
- * the hub retains, so a machine added yesterday reads "近 1 天" over a day it is
- * genuinely accountable for, and a hub keeping a week does not let the card claim
- * a month. The dot takes the same three colours as the detail page's bar at the
- * same thresholds, so the card and the bar cannot disagree about a node.
- *
- * A hub older than this feature sends no `uptime` at all, and no line is drawn:
- * an absent figure and a node that missed every minute are different answers.
- */
-export function UptimeLine({ node }: { node: Node }) {
-  const u = node.uptime
-  // Nothing was expected yet -- a node added within the current minute -- so
-  // there is no fraction to print that would not be a claim about a window of
-  // zero minutes.
-  if (!u || u.to <= u.from7) return null
-  return (
-    <p className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
-      <span
-        aria-hidden
-        className={cn("size-1.5 shrink-0 rounded-full", TONE_CLASS[fractionTone(u.d7)])}
-      />
-      {windowLabel(u.from7, u.to)}
-      <span className="tnum">{availabilityText(u.d7)}</span>
-    </p>
-  )
-}
 
 // Traffic uses the plan's own counting rule, so the bar matches the quota the
 // node is billed against.
@@ -309,11 +282,6 @@ export function NodeCard({ node, onOpen }: { node: Node; onOpen: () => void }) {
               <span className="shrink-0">等待首次上报</span>
             )}
           </p>
-          {/* Its own line rather than a fourth item on the one above: that line
-              is the machine's shape and truncates first on a narrow card, and the
-              uptime figure is the one thing here a reader scans the whole fleet
-              for. */}
-          <UptimeLine node={node} />
       </div>
 
       {/* One layout for both states: a disconnected node still knows its
