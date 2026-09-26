@@ -70,8 +70,9 @@ export function deployed(node: Node) {
 // contrast is the whole signal. The absent dot is `--muted-foreground` at 80%: at
 // full strength it would clear the bar by more than the online dot does and rank
 // "never connected" as the loudest state on the card. Measured against the chip's
-// own `--tag` surface: online 3.56, offline 3.40, absent 3.67 (light) and 5.20 /
-// 4.24 / 4.53 (dark).
+// own `--tag` surface, online / offline / absent: 3.24 / 3.30 / 3.06 (light) and
+// 6.24 / 5.24 / 4.24 (dark) -- all over the 3:1 a graphical object needs, with the
+// absent dot the faintest on both grounds.
 const DOT = {
   ok: "bg-online ring-2 ring-online/25",
   down: "bg-destructive ring-2 ring-destructive/20",
@@ -94,7 +95,7 @@ const DOT = {
  * documented twin for this surface: that one does pass (5.36:1), but a neutral
  * label leaves the fill as the only chromatic thing on the chip, and the coloured
  * twins of state fills measure 4.13:1 once they sit on a tint of their own hue.
- * Measured on the chip itself: 15.68:1 light, 12.05:1 dark.
+ * Measured on the chip itself: 13.91:1 light, 12.24:1 dark.
  */
 const CHIP = "bg-tag text-foreground"
 
