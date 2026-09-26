@@ -6,8 +6,8 @@
 //
 // Nothing imports it, so the bundle never includes it.
 import {
-  availabilityText, missingMinutes, minuteLabel, outageLength, segmentsFor, segmentText, segmentTone,
-  stillDown, TONE_LABEL, windowLabel, type Availability, type Incident, type Segment,
+  availabilityText, missingMinutes, minuteLabel, outageLength, segmentSpan, segmentsFor, segmentText,
+  segmentTone, stepHours, stillDown, TONE_LABEL, windowLabel, type Availability, type Incident, type Segment,
 } from "./uptime.ts"
 
 let failed = 0
@@ -67,9 +67,25 @@ eq(segmentText(seg(0, 60)), "离线 · 上报 0/60 分钟", "离线段的读法"
 eq(segmentText(seg(0, 60, false)), "无数据 · 该时段没有上报记录", "无数据段不报 n/m")
 eq(Object.keys(TONE_LABEL).length, 4, "图例四个状态")
 
-// segmentsFor: the bar always covers the period it claims. The hub clamps its
-// answer to the node's life, so the front has to be put back as 无数据 -- and the
-// padding must stop at the first measured bucket, which may begin before `from`.
+// stepHours: the width is chosen so the segment count stays countable, whatever
+// the window. One hour per segment is right for a day and absurd for a month.
+eq(stepHours(1), 1, "一小时窗就是一段")
+eq(stepHours(6), 1, "六小时窗仍然一小时一段")
+eq(stepHours(24), 1, "一天窗一小时一段（24 段）")
+eq(stepHours(48), 1, "两天仍是 48 段，仍在带内")
+eq(stepHours(72), 2, "三天改用两小时一段（36 段）")
+eq(stepHours(168), 3, "一周改用三小时一段（56 段）")
+eq(stepHours(720), 12, "三十天改用十二小时一段（60 段）")
+eq(stepHours(2160), 24, "九十天改用一天一段（90 段）")
+for (const h of [1, 6, 24, 48, 72, 168, 720, 2160]) {
+  const n = Math.ceil(h / stepHours(h))
+  eq(n <= 90, true, `${h} 小时窗的段数不超过 90（得到 ${n}）`)
+}
+
+// segmentsFor: the bar always covers the period it claims, in segments of that
+// width. The hub answers in hours, so they are grouped; the padding is cut on the
+// same grid and stops at the first measured segment, which may begin before
+// `from` -- two segments over one stretch would be a lie about the width.
 {
   const to = T
   const buckets = [
@@ -85,13 +101,49 @@ eq(Object.keys(TONE_LABEL).length, 4, "图例四个状态")
   const short: Availability = { from: to - 3_600, to, buckets: [buckets[1]], incidents: [] }
   const shortSegs = segmentsFor(short, 3)
   eq(shortSegs.length, 3, "补到请求的宽度")
-  eq(shortSegs.slice(0, 2).every((s) => !s.known && s.m === 60), true, "补的是整小时的无数据")
+  eq(shortSegs.slice(0, 2).every((s) => !s.known && s.m === 60), true, "补的是整段的无数据")
   eq(shortSegs[2].known, true, "最后一段是实测的")
-  eq(shortSegs[2].ts, to - 3_600, "补齐的边界与第一个实测桶对齐，不重叠")
+  eq(shortSegs[2].ts, to - 3_600, "补齐的边界与第一个实测段对齐，不重叠")
 
   const none: Availability = { from: to, to, buckets: [], incidents: [] }
   eq(segmentsFor(none, 2).length, 2, "完全没有数据时整条都是无数据")
   eq(segmentsFor(none, 2).every((s) => segmentTone(s) === "unknown"), true, "且都是 unknown")
+}
+
+// Grouping: a week's hours become 3-hour segments, and `m` follows the width --
+// the denominator must not stay at 60 when the numerator spans three hours.
+{
+  const to = T
+  const hours = Array.from({ length: 168 }, (_, i) => ({ ts: to - (168 - i) * 3_600, n: 60, m: 60 }))
+  const week: Availability = { from: to - 168 * 3_600, to, buckets: hours, incidents: [] }
+  const segs = segmentsFor(week, 168)
+  // 56 whole segments, and a 57th when the window's own start does not land on the
+  // 3-hour grid: the grid is the hub's, and cutting to it can only ever add a
+  // partial segment at the front, never drop one.
+  eq(segs.length >= 56 && segs.length <= 57, true, `一周合成 56–57 段（得到 ${segs.length}）`)
+  const whole = segs.filter((s) => s.m === 180)
+  eq(whole.every((s) => s.n === 180), true, "整段的分母与分子都是三小时")
+  eq(segs.every((s) => s.m > 0 && s.m <= 180), true, "每段的分母都在 0 与一整段之间")
+  eq(segs.reduce((sum, s) => sum + s.m, 0), 168 * 60, "所有段的分母加起来正好是整个窗口的分钟数")
+  eq(segs.filter((s) => s.m < 180).length <= 2, true, "最多只有首尾两段是残段（网格切法决定）")
+  eq(whole.length >= 55, true, `整段至少 55 个（得到 ${whole.length}）`)
+
+  // One 12-minute outage inside a day still shows: the day is partial, not full.
+  const day = hours.map((b, i) => (i === 40 ? { ...b, n: 48 } : b))
+  const withGap: Availability = { from: to - 168 * 3_600, to, buckets: day, incidents: [] }
+  const gapSegs = segmentsFor(withGap, 168)
+  eq(gapSegs.some((s) => segmentTone(s) === "warn"), true, "缺口落在的那一段是部分异常")
+  eq(segmentText(gapSegs.find((s) => segmentTone(s) === "warn")!), "部分异常 · 上报 168/180 分钟",
+     "粗粒度下仍然精确到分钟")
+}
+
+// Segment labels: an hour names an instant, anything wider names its stretch, and
+// a day is written as two dates rather than "00:00 – 00:00".
+{
+  const at = (h: number, m = 0) => new Date(2026, 8, 22, h, m, 0).getTime() / 1_000
+  eq(segmentSpan(at(3), 1), "9月22日 03:00", "一小时段写起点")
+  eq(segmentSpan(at(0), 3), "9月22日 00:00 – 03:00", "三小时段写起止")
+  eq(segmentSpan(at(0), 24), "9月22日 – 9月23日", "一天段写两个日期")
 }
 
 // outageLength: two units at most, never a zero one.

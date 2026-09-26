@@ -80,24 +80,22 @@ const DOT = {
 } as const
 
 /**
- * The wash behind the state chip, the same for all three states.
+ * The state chip's surface: the card's own colour, with the border that gives it
+ * an edge. Upstream's own pill is exactly this (`variant="outline"` -> a
+ * `--border` outline on the card), and the tint this fork had is gone.
  *
- * `--tag` is this theme's tinted-pill surface -- the token whose own comment
- * calls it "the pill behind a country or a tag: a tint, not a second accent" --
- * so the chip speaks the same surface language as the rest of the page, in both
- * modes (`#eaf0fe` light, `#1d2942` dark). The state is no longer carried by the
- * fill: the dot and the word do that, which is what was asked for. `--accent` was
- * the other candidate and is the *hover* surface of ghost controls, so a static
- * chip wearing it would read as a control waiting to be clicked; `bg-primary/10`
- * would be a tint of the action colour, and `--tag` exists for exactly this job.
+ * `bg-card` rather than `bg-white`: in the dark theme the card is `#161a22`, and a
+ * white pill there would be the loudest thing on the page. On the card it reads as
+ * no fill at all, which is the point -- the outline does the separating -- and in
+ * the detail page's header it sits on `--background` instead, where the card
+ * colour still delineates it.
  *
- * The label stays `--foreground` rather than taking `--tag-foreground`, the
- * documented twin for this surface: that one does pass (5.36:1), but a neutral
- * label leaves the fill as the only chromatic thing on the chip, and the coloured
- * twins of state fills measure 4.13:1 once they sit on a tint of their own hue.
- * Measured on the chip itself: 13.91:1 light, 12.24:1 dark.
+ * The label stays `--foreground`, and the state stays with the dot: a coloured
+ * label on a white pill measures 4.13:1 for the red twin (`--danger-fg`), under
+ * the 4.5 a 12px line needs, which is why the fill went neutral in the first
+ * place. Measured on the chip itself: 15.88:1 light, 14.71:1 dark.
  */
-const CHIP = "bg-tag text-foreground"
+const CHIP = "border-border bg-card text-foreground"
 
 function stateOf(node: Node) {
   if (node.online) return "ok"
@@ -134,7 +132,7 @@ export function Status({ node, className }: { node: Node; className?: string }) 
   return (
     <Badge
       variant="outline"
-      className={cn("tnum shrink-0 gap-1.5 overflow-visible border-transparent font-normal", CHIP, className)}
+      className={cn("tnum shrink-0 gap-1.5 overflow-visible font-normal", CHIP, className)}
     >
       <StatusDot node={node} />
       {statusLabel(node)}
