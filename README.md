@@ -29,6 +29,19 @@ npm run dev
 
 一个可安装主题是一个目录，名字必须与 `theme.json` 的 `short` 相同：
 
+### 版本号
+
+`theme.json` 的 `version` 是**唯一来源**，`package.json` 与 `package-lock.json` 必须与它相同
+（CI 会核对这三处，release 流程还会核对 tag 与 `theme.json`）。改版本用：
+
+```bash
+npm version --no-git-tag-version 1.7.2   # 前两处
+# 再把 theme.json 的 version 改成同一个值
+```
+
+为什么较真：hub 判断"这个主题有没有新版"用的是 release tag 与已装 `theme.json` 版本是否
+不同，三处不一致就会一直提示更新，而 tag 一旦推出去既不能改也不能删。
+
 ```text
 <themes-dir>/<short>/
 ├── theme.json

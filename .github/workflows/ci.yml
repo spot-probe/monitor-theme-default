@@ -32,6 +32,18 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      # The hub offers a release as an update for as long as its tag differs from
+      # the installed theme.json version, so the three files carrying that version
+      # have to agree; release.yml then holds the tag to the same value. Bumped
+      # together, by hand or with `npm version --no-git-tag-version`.
+      - run: |
+          V=$(node -p 'require("./theme.json").version')
+          for f in package.json package-lock.json; do
+            [ "$(node -p "require('./$f').version")" = "$V" ] || {
+              echo "::error file=$f::$f 的版本与 theme.json 的 $V 不一致"
+              exit 1
+            }
+          done
       - run: npm run lint
       - run: npm test
       - run: npm run build
