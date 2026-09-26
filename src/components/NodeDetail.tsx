@@ -12,10 +12,11 @@ import { Card } from "@/components/ui/card"
 import { Segmented } from "@/components/ui/segmented"
 import { Skeleton } from "@/components/ui/skeleton"
 import { AvailabilityCard } from "@/components/Availability"
+import { ChartTooltip, Crosshair, Swatch } from "@/components/ChartTooltip"
 import { Country, Status } from "@/components/NodeCard"
 import { api, type Node } from "@/lib/api"
 import {
-  axisBytes, axisTop, bytes, clockFor, quarters, cpuName, CYCLES, FOREVER, money, osName, rate, timeTicks,
+  axisBytes, axisTop, bytes, clockFor, quarters, cpuName, CYCLES, FOREVER, money, osName, rate, stamp, timeTicks,
 } from "@/lib/format"
 import type { Availability } from "@/lib/uptime"
 
@@ -26,6 +27,12 @@ type Point = {
   disk_used: number
   net_rx: number
   net_tx: number
+  /**
+   * Absent until the hub is new enough to put it in a history row. Optional
+   * rather than defaulted to zero, so a hub without it draws no swap line at all
+   * instead of a line along the floor claiming the machine swaps nothing.
+   */
+  swap_used?: number
 }
 // `latency` is the bucket's median round trip, null when every probe in it timed
 // out. `band` is the range its answers spanned, absent when they spanned nothing.
@@ -78,6 +85,12 @@ const AXIS = { stroke: "currentColor", fontSize: 11, tickLine: false, axisLine: 
 // chart across seven hundred points per probe.
 const SERIES = { dot: false as const, strokeWidth: 1.5, isAnimationActive: false }
 
+// Recharts eases its tooltip after the pointer over 400ms. Left on, the box lags
+// behind the crosshair by most of a second on a fast drag, so the two read as two
+// different readings of the same instant; the crosshair is what says where the
+// pointer is, and it is exact.
+const WRAPPER = { transition: "none" }
+
 // One width for every stacked panel's value axis. Sized to their own labels --
 // 40px under "100%", 68px under "172 MB" -- the four plot areas would be offset by
 // 28px, placing a CPU spike and the network spike that caused it at different x.
@@ -110,18 +123,60 @@ const TABS = [
   { key: "latency", label: "网络延迟" },
 ] as const
 
+// One unit per panel, so the panels that measure different things share one
+// tooltip and one crosshair rather than five formatters written out twice.
+const pct = (v: number) => `${v.toFixed(1)}%`
+// A tenth of a millisecond is where a probe's median stops being noise; the whole
+// number the formatter used to print dropped it, and forty of them in a row read
+// as a flat line of integers.
+const ms = (v: number) => `${Math.round(v * 10) / 10} ms`
+
 /**
  * One chart, on its own surface. The panels used to lie flat on the page ground,
  * which left four plots competing with the metadata above them for the same
  * attention; a card gives each one an edge to sit inside, and the title moves into
  * that card's header instead of floating over the plot.
+ *
+ * `value` is what the panel is reading at its right edge: the last bucket the
+ * chart drew, in the panel's own unit. It is the one figure a reader wants
+ * without hovering -- the shape of the line says where the machine has been, and
+ * this says where it is -- and it is read from the chart's own data rather than
+ * from the live report, so the number and the line's right end always agree.
  */
-function Panel({ title, children }: { title: string; children: React.ReactNode }) {
+function Panel({ title, value, children }: { title: string; value?: React.ReactNode; children: React.ReactNode }) {
   return (
     <Card className="gap-0 p-4">
-      <h4 className="mb-3 text-xs font-medium text-muted-foreground">{title}</h4>
+      <div className="mb-3 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+        <h4 className="text-xs font-medium text-muted-foreground">{title}</h4>
+        {value}
+      </div>
       <div className="h-40 w-full text-muted-foreground">{children}</div>
     </Card>
+  )
+}
+
+/**
+ * The reading in a panel's header, with the instant it was measured at as a
+ * `title`: the figure is the chart's own last bucket rather than a live value, and
+ * a reader comparing it against a clock should be able to find out which second it
+ * belongs to without the header carrying a second line of text.
+ */
+function Reading({ at, children }: { at?: number; children: React.ReactNode }) {
+  return (
+    <span className="tnum text-xs font-medium" title={at ? stamp(at) : undefined}>
+      {children}
+    </span>
+  )
+}
+
+/** One series in a header: its own hue, its arrow and its figure. */
+function HeaderSeries({ color, name, value }: { color: string; name: string; value: string }) {
+  return (
+    <span className="inline-flex items-center gap-1 whitespace-nowrap">
+      <Swatch color={color} />
+      <span className="text-muted-foreground">{name}</span>
+      {value}
+    </span>
   )
 }
 
@@ -307,6 +362,24 @@ export function NodeDetail({ node, onBack }: { node: Node; onBack: () => void })
       rate: axisTop(max((m) => Math.max(m.net_rx, m.net_tx)), 1024, 1024),
     }
   }, [metricRows])
+
+  // The last bucket the chart drew, which is what each panel's header reads.
+  const last = metricRows[metricRows.length - 1]
+  // Swap is drawn on the memory panel's axis, so a host whose swap file is larger
+  // than its RAM would otherwise have its swap line drawn above the plot, across
+  // the panel's title. The axis takes whichever is bigger; the title stops naming
+  // a capacity at that point, since it is no longer the whole story.
+  //
+  // The capacity decides whether there is a swap line at all, not the history: a
+  // machine with swap turned off reports a row of zeroes for every bucket, and a
+  // zero that means "there is none" is not a measurement to draw a line along the
+  // floor from. A hub older than the field sends no `swap_used`, which is the
+  // other half of the same answer.
+  const hasSwap = useMemo(
+    () => node.swap_total > 0 && metricRows.some((m) => typeof m.swap_used === "number"),
+    [node.swap_total, metricRows],
+  )
+  const memTop = hasSwap ? Math.max(node.mem_total, node.swap_total) : node.mem_total
 
   const shownProbes = useMemo(
     () => pingSeries.filter((s) => !hiddenProbes.includes(s.id)),
@@ -511,15 +584,30 @@ export function NodeDetail({ node, onBack }: { node: Node; onBack: () => void })
                         far from it, and zero flattens every wobble. */}
                     <YAxis unit="ms" width={52} domain={["auto", "auto"]} {...AXIS} />
                     <Tooltip
-                      labelFormatter={(ts) => new Date(Number(ts)).toLocaleString("zh-CN")}
-                      // The line is drawn from what answered, so without this a
-                      // bucket that lost most of its packets reads as normal.
-                      // `dataKey` is `t7`/`s7`; the loss sits at `l7`.
-                      formatter={(v, name, item) => {
-                        const loss = Number(item?.payload?.[`l${String(item.dataKey).slice(1)}`] ?? 0)
-                        return [`${Number(v)} ms${loss > 0 ? ` · 丢 ${loss}%` : ""}`, name]
-                      }}
-                      contentStyle={{ fontSize: 12 }}
+                      wrapperStyle={WRAPPER}
+                      // recharts drops every entry with no value before the content
+                      // sees it, and hides the tooltip outright once nothing is
+                      // left -- so a bucket that all three probes timed out in
+                      // answers a hover with an empty box. Off, so the timeout is
+                      // named where it happened rather than only in the legend's
+                      // window-wide percentage.
+                      filterNull={false}
+                      content={
+                        // The line is drawn from what answered, so a bucket that
+                        // lost most of its packets would otherwise read as a
+                        // normal one: the loss figure is carried alongside the
+                        // latency. `dataKey` is `t7`/`s7` and the loss sits at `l7`.
+                        <ChartTooltip
+                          format={ms}
+                          nullText="超时"
+                          hint={(item) => {
+                            const loss = Number(item.payload?.[`l${String(item.dataKey).slice(1)}`] ?? 0)
+                            return loss > 0 ? `丢 ${loss}%` : undefined
+                          }}
+                        />
+                      }
+                      // No fixed axis top to divide by, so the vertical line only.
+                      cursor={<Crosshair format={ms} />}
                     />
                     {/* Behind the line, the range that bucket's answers
                         spanned -- Smokeping's "smoke". At the day window a
@@ -618,16 +706,16 @@ export function NodeDetail({ node, onBack }: { node: Node; onBack: () => void })
         <p className="py-8 text-center text-sm text-muted-foreground">这段时间没有历史数据</p>
       ) : (
         <div className="space-y-5">
-          <Panel title="CPU">
+          <Panel title="CPU" value={last && <Reading at={last.ts}>{pct(last.cpu)}</Reading>}>
             <ResponsiveContainer>
               <AreaChart data={metricRows}>
                 <CartesianGrid strokeDasharray="3 3" className="stroke-muted" vertical={false} />
                 <XAxis {...timeAxis(metricRows)} />
                 <YAxis domain={[0, tops.cpu]} ticks={quarters(tops.cpu)} unit="%" width={Y_WIDTH} {...AXIS} />
                 <Tooltip
-                  labelFormatter={(ts) => new Date(Number(ts)).toLocaleString("zh-CN")}
-                  formatter={(v) => [`${Number(v).toFixed(1)}%`, "CPU"]}
-                  contentStyle={{ fontSize: 12 }}
+                  wrapperStyle={WRAPPER}
+                  content={<ChartTooltip format={pct} />}
+                  cursor={<Crosshair domainTop={tops.cpu} format={pct} />}
                 />
                 <Wash id="cpu-wash" color="var(--color-chart-1)" />
                 <Area dataKey="cpu" stroke="var(--color-chart-1)" fill="url(#cpu-wash)" {...SERIES} />
@@ -639,36 +727,82 @@ export function NodeDetail({ node, onBack }: { node: Node; onBack: () => void })
               fraction in use whatever range is picked. Tracking the window's
               own maximum, which is what an area chart does by default, puts
               127 MB of a 457 MB box at the top of the panel. The size is in the
-              title because the axis top is claiming it. */}
-          <Panel title={`内存 · ${bytes(node.mem_total)}`}>
+              title because the axis top is claiming it -- and once swap is drawn
+              on the same axis that claim no longer covers both lines, so the
+              title names the pair and the header carries both capacities. */}
+          <Panel
+            title={hasSwap ? "内存与 Swap" : `内存 · ${bytes(node.mem_total)}`}
+            value={
+              last && (
+                <Reading at={last.ts}>
+                  <span className="inline-flex flex-wrap items-center gap-x-2.5 gap-y-1">
+                    <HeaderSeries
+                      color="var(--color-chart-1)"
+                      name="内存"
+                      value={`${bytes(last.mem_used)} / ${bytes(node.mem_total)}`}
+                    />
+                    {hasSwap && last.swap_used !== undefined && (
+                      <HeaderSeries
+                        color="var(--color-chart-4)"
+                        name="Swap"
+                        value={`${bytes(last.swap_used)} / ${bytes(node.swap_total)}`}
+                      />
+                    )}
+                  </span>
+                </Reading>
+              )
+            }
+          >
             <ResponsiveContainer>
-              <AreaChart data={metricRows}>
+              {/* Composed rather than an area chart, since swap is a second line
+                  on the same axis. A hub without the field sends none of it and
+                  only the area is drawn. */}
+              <ComposedChart data={metricRows}>
                 <CartesianGrid strokeDasharray="3 3" className="stroke-muted" vertical={false} />
                 <XAxis {...timeAxis(metricRows)} />
-                <YAxis domain={[0, node.mem_total]} ticks={quarters(node.mem_total)} tickFormatter={axisBytes} width={Y_WIDTH} {...AXIS} />
+                <YAxis domain={[0, memTop]} ticks={quarters(memTop)} tickFormatter={axisBytes} width={Y_WIDTH} {...AXIS} />
                 <Tooltip
-                  labelFormatter={(ts) => new Date(Number(ts)).toLocaleString("zh-CN")}
-                  formatter={(v) => bytes(Number(v))}
-                  contentStyle={{ fontSize: 12 }}
+                  wrapperStyle={WRAPPER}
+                  content={<ChartTooltip format={bytes} />}
+                  cursor={<Crosshair domainTop={memTop} format={bytes} />}
                 />
                 <Wash id="mem-wash" color="var(--color-chart-1)" />
                 <Area dataKey="mem_used" name="内存" stroke="var(--color-chart-1)" fill="url(#mem-wash)" {...SERIES} />
-              </AreaChart>
+                {hasSwap && (
+                  <Line dataKey="swap_used" name="Swap" stroke="var(--color-chart-4)" {...SERIES} />
+                )}
+              </ComposedChart>
             </ResponsiveContainer>
           </Panel>
 
           {/* A rate has no total to be a fraction of, so this one climbs the
               ladder like CPU rather than pinning to a capacity. */}
-          <Panel title="网络速率">
+          <Panel
+            title="网络速率"
+            value={
+              last && (
+                <Reading at={last.ts}>
+                  {/* The two hues carry the direction as well as naming it: this
+                      panel draws two lines and had no key at all, so the only way
+                      to tell download from upload was to remember which line the
+                      tooltip had labelled. */}
+                  <span className="inline-flex flex-wrap items-center gap-x-2.5 gap-y-1">
+                    <HeaderSeries color="var(--color-chart-1)" name="↓" value={rate(last.net_rx)} />
+                    <HeaderSeries color="var(--color-chart-4)" name="↑" value={rate(last.net_tx)} />
+                  </span>
+                </Reading>
+              )
+            }
+          >
             <ResponsiveContainer>
               <LineChart data={metricRows}>
                 <CartesianGrid strokeDasharray="3 3" className="stroke-muted" vertical={false} />
                 <XAxis {...timeAxis(metricRows)} />
                 <YAxis domain={[0, tops.rate]} ticks={quarters(tops.rate)} tickFormatter={axisBytes} unit="/s" width={Y_WIDTH} {...AXIS} />
                 <Tooltip
-                  labelFormatter={(ts) => new Date(Number(ts)).toLocaleString("zh-CN")}
-                  formatter={(v) => rate(Number(v))}
-                  contentStyle={{ fontSize: 12 }}
+                  wrapperStyle={WRAPPER}
+                  content={<ChartTooltip format={rate} />}
+                  cursor={<Crosshair domainTop={tops.rate} format={rate} />}
                 />
                 {/* Two lines, so two hues -- and the same pair the summary's
                     sparkline uses for the same two directions. */}
@@ -681,16 +815,29 @@ export function NodeDetail({ node, onBack }: { node: Node; onBack: () => void })
           {/* The disk it is filling, for the same reason as memory: a node
               using 2.7% of its disk draws along the top of the panel when the
               axis tracks the window's own maximum. */}
-          <Panel title={`硬盘 · ${bytes(node.disk_total)}`}>
+          <Panel
+            title={`硬盘 · ${bytes(node.disk_total)}`}
+            value={
+              last && (
+                <Reading at={last.ts}>
+                  <HeaderSeries
+                    color="var(--color-chart-1)"
+                    name="已用"
+                    value={`${bytes(last.disk_used)} / ${bytes(node.disk_total)}`}
+                  />
+                </Reading>
+              )
+            }
+          >
             <ResponsiveContainer>
               <AreaChart data={metricRows}>
                 <CartesianGrid strokeDasharray="3 3" className="stroke-muted" vertical={false} />
                 <XAxis {...timeAxis(metricRows)} />
                 <YAxis domain={[0, node.disk_total]} ticks={quarters(node.disk_total)} tickFormatter={axisBytes} width={Y_WIDTH} {...AXIS} />
                 <Tooltip
-                  labelFormatter={(ts) => new Date(Number(ts)).toLocaleString("zh-CN")}
-                  formatter={(v) => bytes(Number(v))}
-                  contentStyle={{ fontSize: 12 }}
+                  wrapperStyle={WRAPPER}
+                  content={<ChartTooltip format={bytes} />}
+                  cursor={<Crosshair domainTop={node.disk_total} format={bytes} />}
                 />
                 <Wash id="disk-wash" color="var(--color-chart-1)" />
                 <Area dataKey="disk_used" name="硬盘" stroke="var(--color-chart-1)" fill="url(#disk-wash)" {...SERIES} />
