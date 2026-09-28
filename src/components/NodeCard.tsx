@@ -1,5 +1,5 @@
 import type { CSSProperties } from "react"
-import { ArrowDown, ArrowUp } from "lucide-react"
+import { ArrowDown, ArrowDownToLine, ArrowUp, ArrowUpToLine, CalendarClock, Coins } from "lucide-react"
 import {
   siAlmalinux, siAlpinelinux, siArchlinux, siCentos, siDebian, siFedora, siLinux, siOpensuse, siRedhat,
   siRockylinux, siUbuntu, type SimpleIcon,
@@ -210,7 +210,8 @@ function Expiry({ node }: { node: Node }) {
   const days = node.expires_in !== undefined ? node.expires_in : daysUntil(node.expires_at)
   if (days === null)
     return (
-      <span className="text-xs text-muted-foreground" title="永不到期">
+      <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground" title="永不到期">
+        <CalendarClock className="size-3 shrink-0" aria-hidden />
         {FOREVER}
       </span>
     )
@@ -218,18 +219,36 @@ function Expiry({ node }: { node: Node }) {
   // which carries as a bar and not as a word.
   const tone = days < 0 ? "text-danger-fg" : days <= 7 ? "text-warn-fg" : "text-muted-foreground"
   return (
-    <span className={cn("tnum text-xs", tone)}>
-      {days < 0 ? `已过期 ${-days} 天` : `${days} 天后到期`}
+    <span className="inline-flex items-center gap-1.5">
+      {/* The icon stays muted while the words take the tone: the colour is a
+          warning about the date, and a tinted glyph beside a tinted number would
+          spend the whole cell on it. */}
+      <CalendarClock className="size-3 shrink-0 text-muted-foreground" aria-hidden />
+      <span className={cn("tnum text-xs", tone)}>
+        {days < 0 ? `已过期 ${-days} 天` : `${days} 天后到期`}
+      </span>
     </span>
   )
 }
 
 /** What the plan costs, in the same cell shape as the expiry beside it. */
 function Price({ node }: { node: Node }) {
-  if (node.price <= 0) return <span className="text-xs text-muted-foreground">免费</span>
+  // Coins rather than a currency sign: the fleet is priced in more than one, and
+  // a glyph that changed with the currency would misalign the column it sits in.
+  const icon = <Coins className="size-3 shrink-0" aria-hidden />
+  if (node.price <= 0)
+    return (
+      <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+        {icon}
+        免费
+      </span>
+    )
   return (
-    <span className="tnum truncate text-xs text-muted-foreground">
-      {money(node.price, node.currency)} / {CYCLES[node.billing_cycle] ?? node.billing_cycle}
+    <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+      {icon}
+      <span className="tnum truncate">
+        {money(node.price, node.currency)} / {CYCLES[node.billing_cycle] ?? node.billing_cycle}
+      </span>
     </span>
   )
 }
@@ -320,26 +339,33 @@ export function NodeCard({ node, onOpen }: { node: Node; onOpen: () => void }) {
           </div>
 
           {/* Three columns read downwards: rate, lifetime total, then the deadline
-              and what it costs. Equal shares and one gutter, so the columns line up
-              instead of drifting apart. Down before up throughout, the order every
-              other figure on this page takes. */}
-          <div className="mt-5 grid grid-cols-3 gap-x-4 gap-y-2 text-xs">
+              and what it costs. One gutter and a fixed template -- the third column
+              a third wider, because a price with its period (`¥1111.00 / 年`) is the
+              longest thing here and was being cut off with an ellipsis -- so the
+              columns line up across cards instead of drifting apart. Down before up
+              throughout, the order every other figure on this page takes.
+              Every cell now leads with a glyph, and the glyph says which *kind* of
+              figure it is: a bare arrow is this second, an arrow onto a line is the
+              running total, a calendar is the deadline, coins are the price. The
+              rate and the total were both arrowed before, so the only thing
+              separating "861 B/s" from "709 MB" was reading the number. */}
+          <div className="mt-5 grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.35fr)] gap-x-4 gap-y-2 text-xs">
             <span className="tnum inline-flex items-center gap-1.5">
-              <ArrowDown className="size-3 shrink-0 text-muted-foreground" />
+              <ArrowDown className="size-3 shrink-0 text-muted-foreground" aria-hidden />
               {m ? rate(m.net_rx) : "—"}
             </span>
             <span className="tnum inline-flex items-center gap-1.5 text-muted-foreground">
-              <ArrowDown className="size-3 shrink-0" />
+              <ArrowDownToLine className="size-3 shrink-0" aria-hidden />
               {bytes(node.total_rx)}
             </span>
             <Expiry node={node} />
 
             <span className="tnum inline-flex items-center gap-1.5">
-              <ArrowUp className="size-3 shrink-0 text-muted-foreground" />
+              <ArrowUp className="size-3 shrink-0 text-muted-foreground" aria-hidden />
               {m ? rate(m.net_tx) : "—"}
             </span>
             <span className="tnum inline-flex items-center gap-1.5 text-muted-foreground">
-              <ArrowUp className="size-3 shrink-0" />
+              <ArrowUpToLine className="size-3 shrink-0" aria-hidden />
               {bytes(node.total_tx)}
             </span>
             <Price node={node} />
