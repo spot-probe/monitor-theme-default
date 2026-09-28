@@ -260,7 +260,12 @@ export default function App() {
               ) : view === "list" ? (
                 <NodeTable nodes={filtered} onOpen={go} />
               ) : (
-                <div className="grid items-start gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                // No `items-start`: the grid's own stretch is what keeps a row's cards
+                // the same height. One card with a longer figure -- a price with its
+                // period, a name that truncates differently -- otherwise ends a line
+                // lower than its neighbours, which reads as a layout bug rather than as
+                // data. The shorter cards take the slack at the bottom.
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                   {filtered.map((n) => (
                     <NodeCard key={n.id} node={n} onOpen={() => go(n.id)} />
                   ))}

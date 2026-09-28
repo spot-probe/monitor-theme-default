@@ -73,10 +73,17 @@ export function deployed(node: Node) {
 // own `--tag` surface, online / offline / absent: 3.24 / 3.30 / 3.06 (light) and
 // 6.24 / 5.24 / 4.24 (dark) -- all over the 3:1 a graphical object needs, with the
 // absent dot the faintest on both grounds.
+/**
+ * The state dot. A machine that is here gets a *filled* dot with a halo; one that
+ * is not gets a *hollow ring*. Filled versus hollow is the one difference that
+ * survives a reader who cannot tell green from red, and across a grid of cards it
+ * is what makes the offline ones fall out at a glance instead of only when the
+ * chip's words are read.
+ */
 const DOT = {
   ok: "bg-online ring-2 ring-online/25",
-  down: "bg-destructive ring-2 ring-destructive/20",
-  absent: "bg-muted-foreground/80",
+  down: "border-2 border-destructive bg-transparent",
+  absent: "border-2 border-muted-foreground/70 bg-transparent",
 } as const
 
 /**
@@ -96,6 +103,14 @@ const DOT = {
  * place. Measured on the chip itself: 15.88:1 light, 14.71:1 dark.
  */
 const CHIP = "border-border bg-card text-foreground"
+
+/**
+ * The chip of a machine that is not here: the same outline, one step quieter. Its
+ * duration is still the first thing read on such a card, so it does not go faint
+ * -- it goes *one* step down, from the card's own foreground to the muted tone
+ * (4.97:1 on the card in light, 6.93:1 in dark).
+ */
+const CHIP_GONE = "border-border bg-card text-muted-foreground"
 
 function stateOf(node: Node) {
   if (node.online) return "ok"
@@ -132,7 +147,11 @@ export function Status({ node, className }: { node: Node; className?: string }) 
   return (
     <Badge
       variant="outline"
-      className={cn("tnum shrink-0 gap-1.5 overflow-visible font-normal", CHIP, className)}
+      className={cn(
+        "tnum shrink-0 gap-1.5 overflow-visible font-normal",
+        stateOf(node) === "ok" ? CHIP : CHIP_GONE,
+        className,
+      )}
     >
       <StatusDot node={node} />
       {statusLabel(node)}
@@ -263,7 +282,14 @@ export function NodeCard({ node, onOpen }: { node: Node; onOpen: () => void }) {
       // OS line below does not wrap, so on a phone the card would grow past its
       // column and scroll the page sideways. The truncate inside only takes effect
       // once the card is allowed to be narrower.
-      className="min-w-0 cursor-pointer gap-0 p-4 transition hover:border-primary/40 hover:shadow-card-hover focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:outline-none"
+      className={cn(
+        "min-w-0 cursor-pointer gap-0 p-4 transition hover:border-primary/40 hover:shadow-card-hover focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:outline-none",
+        // One shade off the card colour for a machine that is not here, so a mixed
+        // grid reads as "these are down" before any of the words are read. The
+        // figures stay at full strength: they are the last facts the node left, not
+        // a claim that it is still reporting them.
+        stateOf(node) !== "ok" && "bg-muted/40",
+      )}
       role="button"
       tabIndex={0}
       onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), onOpen())}
@@ -349,7 +375,7 @@ export function NodeCard({ node, onOpen }: { node: Node; onOpen: () => void }) {
               running total, a calendar is the deadline, coins are the price. The
               rate and the total were both arrowed before, so the only thing
               separating "861 B/s" from "709 MB" was reading the number. */}
-          <div className="mt-5 grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.35fr)] gap-x-4 gap-y-2 text-xs">
+          <div className="mt-5 grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.35fr)] gap-x-4 gap-y-2 text-xs whitespace-nowrap">
             <span className="tnum inline-flex items-center gap-1.5">
               <ArrowDown className="size-3 shrink-0 text-muted-foreground" aria-hidden />
               {m ? rate(m.net_rx) : "—"}
