@@ -89,13 +89,19 @@ export function money(amount: number, currency: string): string {
   return `${SYMBOLS[currency] ?? ""}${amount.toFixed(2)}${SYMBOLS[currency] ? "" : ` ${currency}`}`
 }
 
+/**
+ * Billing cycles as the page writes them. The period alone, because every caller
+ * prints it after a slash -- `$39.90 / 年` is per year, and the "付" that used to
+ * follow it was the difference between the price fitting its column and being cut
+ * off with an ellipsis.
+ */
 export const CYCLES: Record<string, string> = {
-  monthly: "月付",
-  quarterly: "季付",
-  semiannual: "半年付",
-  yearly: "年付",
-  biennial: "两年付",
-  triennial: "三年付",
+  monthly: "月",
+  quarterly: "季",
+  semiannual: "半年",
+  yearly: "年",
+  biennial: "两年",
+  triennial: "三年",
   once: "一次性",
 }
 
