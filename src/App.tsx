@@ -305,7 +305,17 @@ export default function App() {
           </div>
         ) : (
           <>
-            <Summary nodes={sorted} />
+            <Summary
+              nodes={sorted}
+              // The same 离线 chip the toolbar carries, so the count and the filter
+              // cannot come to mean different things. A toggle, so a second click
+              // on the tile is never a dead one.
+              filtering={filters.includes("offline")}
+              onFilter={() =>
+                setFilters((f) => (f.includes("offline") ? f.filter((k) => k !== "offline") : [...f, "offline"]))
+              }
+              onOpen={(n) => go(n.id)}
+            />
             {/* Ten pixels either side of the toolbar, not twenty. It belongs to
                 the list it acts on, so the page's own rhythm between sections
                 would read as a break the toolbar is not. */}
