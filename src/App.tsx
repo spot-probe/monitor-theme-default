@@ -274,8 +274,13 @@ export default function App() {
               <span className="truncate">{me.site_name || "Monitor"}</span>
             </button>
           </h1>
-          <Live live={live} updatedAt={updatedAt} />
           <div className="flex-1" />
+          {/* The freshness line sits with the other tools at the far end, not
+              beside the brand. Next to the name it read as part of the title and
+              pushed the two of them around as the timestamp changed width; on the
+              right it lines up with the controls it belongs with, and the brand
+              keeps the left edge to itself. */}
+          <Live live={live} updatedAt={updatedAt} />
           {/* The panel is a separate app built into the hub, not part of this
               theme, so this is a navigation rather than a route. */}
           <Button variant="ghost" size="sm" asChild>
