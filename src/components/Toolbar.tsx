@@ -12,7 +12,7 @@ export type View = "grid" | "list"
  * three unrelated widgets that happened to land together rather than as one
  * instrument panel.
  */
-const CONTROL = "h-8"
+const CONTROL = "h-8 max-sm:h-10"
 
 /**
  * A group tab. Plain text with the active one in the accent colour, which is the
@@ -31,7 +31,18 @@ function GroupTab({ active, onClick, children }: {
       // row of otherwise 12px controls. Weight is constant so switching tabs does
       // not reflow the row -- the colour is the whole difference.
       className={cn(
-        "rounded text-xs font-medium whitespace-nowrap transition-colors",
+        // `inline-flex items-center` so a height can be put on a bare text button;
+        // on a pointer it stays exactly the 16px line it was.
+        "inline-flex items-center rounded text-xs font-medium whitespace-nowrap transition-colors",
+        // On a phone this row is the first control on the page and its targets
+        // were 16px tall and only as wide as the word -- next to chips that are
+        // 32px, in the same row. The padding is what makes them hittable; the
+        // container gives up its 14px gaps at that size (see below) so the row
+        // still fits without scrolling sideways.
+        "max-sm:h-8 max-sm:px-2",
+        // The ring every other control on the page has; these had only the
+        // browser's default, which Safari barely draws.
+        "focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:outline-none",
         active ? "text-primary" : "text-muted-foreground hover:text-foreground",
       )}
     >
@@ -77,7 +88,19 @@ export function Toolbar({ nodes, counts, view, onView, query, onQuery, filters, 
           here -- it should not cost space until it earns it. */}
       {groups.length > 0 && (
         <>
-          <div role="group" aria-label="节点分组" className={cn("flex shrink-0 items-center gap-3.5", CONTROL)}>
+          <div
+            role="group"
+            aria-label="节点分组"
+            className={cn(
+              "flex shrink-0 items-center gap-3.5",
+              // At the size where the tabs grow padding, the padding *is* the
+              // separation: 8px either side of every word reads the same as the
+              // 14px gap did, and 5 tabs × 16px is what would otherwise push this
+              // `shrink-0` row past the viewport and scroll the page sideways.
+              "max-sm:gap-0",
+              CONTROL,
+            )}
+          >
             <GroupTab active={group === null} onClick={() => onGroup(null)}>
               全部节点
             </GroupTab>
@@ -112,7 +135,8 @@ export function Toolbar({ nodes, counts, view, onView, query, onQuery, filters, 
               onClick={() => toggleFilter(f.key)}
               aria-pressed={active}
               className={cn(
-                "inline-flex h-6 items-center gap-1.5 rounded px-2 text-xs whitespace-nowrap transition-colors",
+                "inline-flex h-6 items-center gap-1.5 rounded px-2 text-xs whitespace-nowrap transition-colors max-sm:h-8",
+                "focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:outline-none",
                 active ? "bg-accent text-primary" : "text-muted-foreground hover:bg-muted hover:text-foreground",
               )}
             >
@@ -163,7 +187,7 @@ export function Toolbar({ nodes, counts, view, onView, query, onQuery, filters, 
             onChange={(e) => onQuery(e.target.value)}
             placeholder="搜索节点"
             aria-label="按名称、国家或系统搜索节点"
-            className="h-8 w-36 rounded-md border border-input bg-card pr-7 pl-7 text-xs outline-none transition placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30 sm:w-48"
+            className="h-8 w-36 rounded-md border border-input bg-card pr-7 pl-7 text-xs outline-none transition placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30 max-sm:h-10 sm:w-48"
           />
           {query !== "" && (
             <button

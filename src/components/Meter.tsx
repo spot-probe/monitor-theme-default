@@ -39,7 +39,20 @@ export function Meter({ label, pct, foot, empty = "—" }: Props) {
           (#f1f3f7) the track had no readable extent, so the bar looked like it
           floated with no start or end. rounded-full on both halves is what makes
           the two ends read as ends. */}
-      <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-muted-foreground/20">
+      <div
+        // The bar carries the same reading as the percentage beside it, announced
+        // as a gauge instead of drawn twice: with no ceiling (∞, or a node that
+        // never reported) there is no value to announce, so `aria-valuetext` says
+        // what the tile says and `aria-valuenow` stays off.
+        role="progressbar"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        {...(pct === null
+          ? { "aria-valuetext": typeof empty === "string" ? empty : "无" }
+          : { "aria-valuenow": Math.round(filled), "aria-valuetext": `${filled.toFixed(filled < 10 ? 1 : 0)}%` })}
+        aria-label={typeof label === "string" ? label : undefined}
+        className="mt-2 h-2 w-full overflow-hidden rounded-full bg-muted-foreground/20"
+      >
         <div
           className={cn(
             "h-full rounded-full transition-[width] duration-500",

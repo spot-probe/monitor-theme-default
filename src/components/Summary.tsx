@@ -5,11 +5,45 @@ import { speedHistory, type Node } from "@/lib/api"
 import { bytes, rate } from "@/lib/format"
 import { cn } from "@/lib/utils"
 
-function Tile({ icon: Icon, label, children }: {
-  icon: typeof Server; label: string; children: React.ReactNode
+/**
+ * One of the four figures at the top of the page.
+ *
+ * A tile that leads somewhere is a button and one that does not is not: same
+ * surface, but only the first gets a pointer, a hover edge and a ring, so the
+ * affordance is honest -- two of these four are ends in themselves (there is no
+ * page behind "累计流量") and two are ways into the list below. The card's own
+ * `role`/`tabIndex`/Enter handling mirror `NodeCard`, which is the same shape
+ * one row down.
+ */
+function Tile({ icon: Icon, label, onOpen, pressed, title, children }: {
+  icon: typeof Server
+  label: string
+  onOpen?: () => void
+  /** Set on a tile that toggles a filter, so its state is visible here too. */
+  pressed?: boolean
+  title?: string
+  children: React.ReactNode
 }) {
   return (
-    <Card className="gap-0 p-3">
+    <Card
+      className={cn(
+        "gap-0 p-3",
+        onOpen &&
+          "cursor-pointer transition hover:border-primary/40 hover:shadow-card-hover focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:outline-none",
+        onOpen && pressed && "border-primary/40",
+      )}
+      {...(onOpen
+        ? {
+            role: "button" as const,
+            tabIndex: 0,
+            title,
+            ...(pressed === undefined ? {} : { "aria-pressed": pressed }),
+            onClick: onOpen,
+            onKeyDown: (e: React.KeyboardEvent) =>
+              (e.key === "Enter" || e.key === " ") && (e.preventDefault(), onOpen()),
+          }
+        : {})}
+    >
       <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
         <Icon className="size-3.5" />
         {label}
@@ -81,7 +115,14 @@ function Spark({ series }: { series: { values: number[]; className: string }[] }
   )
 }
 
-export function Summary({ nodes }: { nodes: Node[] }) {
+export function Summary({ nodes, filtering, onFilter, onOpen }: {
+  nodes: Node[]
+  /** Whether the 离线 chip is on: the tile toggles it rather than only setting it. */
+  filtering: boolean
+  onFilter: () => void
+  /** The busiest node's own page. */
+  onOpen: (node: Node) => void
+}) {
   const online = nodes.filter((n) => n.online)
   const offline = nodes.length - online.length
   const sum = (pick: (n: Node) => number) => nodes.reduce((total, n) => total + pick(n), 0)
@@ -102,7 +143,13 @@ export function Summary({ nodes }: { nodes: Node[] }) {
 
   return (
     <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-      <Tile icon={Server} label="节点">
+      <Tile
+        icon={Server}
+        label="节点"
+        onOpen={offline > 0 ? onFilter : undefined}
+        pressed={offline > 0 ? filtering : undefined}
+        title={offline > 0 ? (filtering ? "取消只看离线" : "只看离线节点") : undefined}
+      >
         <div className="tnum mt-1 text-xl font-semibold">
           {online.length} / {nodes.length}
         </div>
@@ -110,6 +157,8 @@ export function Summary({ nodes }: { nodes: Node[] }) {
             the row, and the footnote belongs on the floor of the card. */}
         <div className="mt-auto pt-1 text-xs text-muted-foreground">
           {offline > 0 ? (
+            // The count is the reason to look further, so it is the thing that
+            // takes you there.
             <span className="inline-flex items-center gap-1.5 text-danger-fg">
               <span className="size-1.5 rounded-full bg-destructive" />
               {offline} 个离线
@@ -123,7 +172,12 @@ export function Summary({ nodes }: { nodes: Node[] }) {
         </div>
       </Tile>
 
-      <Tile icon={Activity} label="最忙节点">
+      <Tile
+        icon={Activity}
+        label="最忙节点"
+        onOpen={busiest ? () => onOpen(busiest) : undefined}
+        title={busiest ? `打开 ${busiest.name}` : undefined}
+      >
         <div className="tnum mt-1 text-xl font-semibold">{busiest ? `${cpu.toFixed(1)}%` : "—"}</div>
         <div className={cn("mt-auto truncate pt-1 text-xs", tone)}>{busiest ? busiest.name : "无在线节点"}</div>
       </Tile>

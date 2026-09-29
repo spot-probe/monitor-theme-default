@@ -29,7 +29,7 @@ export function Segmented<T extends string | number>({ items, value, onChange, l
     <div
       role="group"
       aria-label={label}
-      className={cn("inline-flex h-8 shrink-0 items-center gap-0.5 rounded-md border bg-card px-0.5", className)}
+      className={cn("inline-flex h-8 shrink-0 items-center gap-0.5 rounded-md border bg-card px-0.5 max-sm:h-10", className)}
     >
       {items.map((item) => {
         const active = item.value === value
@@ -42,7 +42,12 @@ export function Segmented<T extends string | number>({ items, value, onChange, l
             aria-label={item.title ?? item.label}
             title={item.title}
             className={cn(
-              "inline-flex h-6 items-center gap-1.5 rounded text-xs whitespace-nowrap transition-colors",
+              // `max-sm:h-8`: a 24px segment inside a 32px frame is a mouse target,
+              // and this row is the only control on the page a phone visitor has to
+              // hit. The ring is what every other control here already shows on a
+              // keyboard pass; these had only the browser's default.
+              "inline-flex h-6 items-center gap-1.5 rounded text-xs whitespace-nowrap transition-colors max-sm:h-8",
+              "focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:outline-none",
               item.label === "" ? "px-1.5" : "px-2",
               active ? "bg-accent text-primary" : "text-muted-foreground hover:bg-muted hover:text-foreground",
             )}
