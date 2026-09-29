@@ -12,7 +12,7 @@ export type View = "grid" | "list"
  * three unrelated widgets that happened to land together rather than as one
  * instrument panel.
  */
-const CONTROL = "h-8"
+const CONTROL = "h-8 max-sm:h-10"
 
 /**
  * A group tab. Plain text with the active one in the accent colour, which is the
@@ -32,6 +32,9 @@ function GroupTab({ active, onClick, children }: {
       // not reflow the row -- the colour is the whole difference.
       className={cn(
         "rounded text-xs font-medium whitespace-nowrap transition-colors",
+        // The ring every other control on the page has; these had only the
+        // browser's default, which Safari barely draws.
+        "focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:outline-none",
         active ? "text-primary" : "text-muted-foreground hover:text-foreground",
       )}
     >
@@ -112,7 +115,8 @@ export function Toolbar({ nodes, counts, view, onView, query, onQuery, filters, 
               onClick={() => toggleFilter(f.key)}
               aria-pressed={active}
               className={cn(
-                "inline-flex h-6 items-center gap-1.5 rounded px-2 text-xs whitespace-nowrap transition-colors",
+                "inline-flex h-6 items-center gap-1.5 rounded px-2 text-xs whitespace-nowrap transition-colors max-sm:h-8",
+                "focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:outline-none",
                 active ? "bg-accent text-primary" : "text-muted-foreground hover:bg-muted hover:text-foreground",
               )}
             >
@@ -163,7 +167,7 @@ export function Toolbar({ nodes, counts, view, onView, query, onQuery, filters, 
             onChange={(e) => onQuery(e.target.value)}
             placeholder="搜索节点"
             aria-label="按名称、国家或系统搜索节点"
-            className="h-8 w-36 rounded-md border border-input bg-card pr-7 pl-7 text-xs outline-none transition placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30 sm:w-48"
+            className="h-8 w-36 rounded-md border border-input bg-card pr-7 pl-7 text-xs outline-none transition placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30 max-sm:h-10 sm:w-48"
           />
           {query !== "" && (
             <button
