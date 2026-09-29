@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react"
-import { ArrowLeft } from "lucide-react"
+import { ArrowLeft, StickyNote } from "lucide-react"
 import {
   Area, AreaChart, Brush, CartesianGrid, ComposedChart, Line, LineChart, ResponsiveContainer,
   Tooltip, XAxis, YAxis,
@@ -530,8 +530,19 @@ export function NodeDetail({ node, onBack }: { node: Node; onBack: () => void })
 
       {avail && <AvailabilityCard data={avail} hours={AVAILABILITY_HOURS} />}
 
-      {node.remark && (
+      {/* The operator's own note, which only a signed-in browser is sent at all
+          (`node_view` attaches `remark` with the other panel-only fields), so this
+          block is never part of the public page. It used to be the bare text in a
+          dashed box: a reader who did not remember writing it -- and only the
+          author ever sees it -- met an unexplained line, which reads as a rendering
+          bug rather than as their own note. The label is the whole fix; the dashed
+          surface stays, because the note is not measured data. */}
+      {node.remark?.trim() && (
         <Card className="gap-0 border-dashed bg-muted/40 p-4">
+          <h4 className="mb-1.5 inline-flex items-center gap-1 text-xs font-medium text-muted-foreground">
+            <StickyNote className="size-3" aria-hidden />
+            备注
+          </h4>
           <p className="text-sm whitespace-pre-wrap">{node.remark}</p>
         </Card>
       )}
