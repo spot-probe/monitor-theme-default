@@ -105,15 +105,22 @@ function Live({ live, updatedAt }: { live: boolean; updatedAt: number }) {
   return (
     <span
       className={cn(
-        // Hidden on a phone, where the header has no room for it; the figures that
-        // would be stale are on the same screen either way.
-        "hidden items-center gap-1.5 text-xs whitespace-nowrap sm:inline-flex",
+        "inline-flex items-center gap-1.5 text-xs whitespace-nowrap",
         live ? "text-muted-foreground" : "text-warn-fg",
       )}
       title={live ? "数据由 hub 实时推送" : "实时推送已断开，正在重连；期间每 5 秒轮询一次"}
     >
-      <span aria-hidden className={cn("size-1.5 shrink-0 rounded-full", live ? "bg-online" : "bg-warn")} />
-      {live ? `更新于 ${time}` : updatedAt ? `已断开 · 最后更新 ${time}` : "连接中…"}
+      {/* The header has no room for the sentence on a phone, but the dot is the
+          part that carries the alarm -- a page that stopped updating must not
+          look calm just because the screen is narrow. The text stays in the
+          accessibility tree there, so nothing is lost to a screen reader. */}
+      <span
+        aria-hidden
+        className={cn("size-1.5 shrink-0 rounded-full max-sm:size-2", live ? "bg-online" : "bg-warn")}
+      />
+      <span className="max-sm:sr-only">
+        {live ? `更新于 ${time}` : updatedAt ? `已断开 · 最后更新 ${time}` : "连接中…"}
+      </span>
     </span>
   )
 }
