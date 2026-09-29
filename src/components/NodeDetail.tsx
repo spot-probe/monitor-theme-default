@@ -15,7 +15,7 @@ import { ChartTooltip, Crosshair, Swatch } from "@/components/ChartTooltip"
 import { Country, Status } from "@/components/NodeCard"
 import { api, type Node } from "@/lib/api"
 import {
-  axisBytes, axisTop, bytes, clockFor, despike, quarters, cpuName, CYCLES, FOREVER, money, osName, rate,
+  axisBytes, axisTop, bytes, clockFor, despike, quarters, cpuName, cycle, FOREVER, money, osName, rate,
   stamp, timeTicks,
 } from "@/lib/format"
 import type { Availability } from "@/lib/uptime"
@@ -556,7 +556,7 @@ export function NodeDetail({ node, showPeak, onBack }: {
           label="续费"
           value={[
             node.price > 0
-              ? `${money(node.price, node.currency)} / ${CYCLES[node.billing_cycle] ?? node.billing_cycle}`
+              ? `${money(node.price, node.currency)} / ${cycle(node.billing_cycle)}`
               : "免费",
             node.expires_at ? `${node.expires_at} 到期` : FOREVER,
           ].join(" · ")}

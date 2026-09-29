@@ -94,15 +94,19 @@ export function money(amount: number, currency: string): string {
  * prints it after a slash -- `$39.90 / 年` is per year, and the "付" that used to
  * follow it was the difference between the price fitting its column and being cut
  * off with an ellipsis.
+ *
+ * Older hubs store only the named lengths below; later ones store any other
+ * length as `<n>m`, which reads as `5 年` or `18 个月` in the same style.
  */
-export const CYCLES: Record<string, string> = {
-  monthly: "月",
-  quarterly: "季",
-  semiannual: "半年",
-  yearly: "年",
-  biennial: "两年",
-  triennial: "三年",
-  once: "一次性",
+const NAMED_CYCLES: Record<string, number> = { monthly: 1, quarterly: 3, semiannual: 6, yearly: 12, biennial: 24, triennial: 36 }
+const CYCLE_WORDS: Record<number, string> = { 1: "月", 3: "季", 6: "半年", 12: "年", 24: "两年", 36: "三年" }
+
+/** How a billing cycle reads after the slash: 月, 年, 5 年, 18 个月, 一次性. */
+export function cycle(billing: string): string {
+  if (billing === "once") return "一次性"
+  const months = NAMED_CYCLES[billing] ?? Number(/^(\d+)m$/.exec(billing)?.[1])
+  if (!months) return billing
+  return CYCLE_WORDS[months] ?? (months % 12 ? `${months} 个月` : `${months / 12} 年`)
 }
 
 // Hoisted out of `clock`: recharts calls a tickFormatter for every sample when

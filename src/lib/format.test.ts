@@ -4,7 +4,7 @@
 //
 // Nothing imports it, so the bundle never includes it.
 import {
-  axisBytes, axisTop, bytes, cpuName, daysUntil, despike, osName, pair, quarters, timeTicks, uptime,
+  axisBytes, axisTop, bytes, cpuName, cycle, daysUntil, despike, osName, pair, quarters, timeTicks, uptime,
 } from "./format.ts"
 
 let failed = 0
@@ -120,6 +120,14 @@ eq(uptime(3 * 3600), "3 小时", "整小时的零头不写")
 
 eq(osName("Debian GNU/Linux 12 (bookworm)"), "Debian 12", "发行版名去掉代号")
 eq(cpuName("Intel(R) Xeon(R) CPU E5-2680 8-Core Processor"), "Intel Xeon E5-2680", "CPU 名去掉商标和核数")
+
+// 旧 hub 存名称，新 hub 把其余长度存成 `<n>m`；同一个长度两种写法读出来一样，
+// 而认不出的周期原样显示，不吞掉。
+eq(
+  ["monthly", "yearly", "12m", "60m", "18m", "biennial", "36m", "once", "weekly"].map(cycle),
+  ["月", "年", "年", "5 年", "18 个月", "两年", "三年", "一次性", "weekly"],
+  "付款周期",
+)
 
 if (failed) {
   console.error(`\n${failed} 项不通过`)

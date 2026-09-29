@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge"
 import { Card } from "@/components/ui/card"
 import { Meter } from "@/components/Meter"
 import type { Node } from "@/lib/api"
-import { bytes, CYCLES, daysUntil, FOREVER, money, osName, pair, percent, rate, uptime } from "@/lib/format"
+import { bytes, cycle, daysUntil, FOREVER, money, osName, pair, percent, rate, uptime } from "@/lib/format"
 import { cn } from "@/lib/utils"
 
 // Emitted as files and fetched on first use, so a page carries only the flags its
@@ -266,7 +266,7 @@ function Price({ node }: { node: Node }) {
     <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
       {icon}
       <span className="tnum truncate">
-        {money(node.price, node.currency)} / {CYCLES[node.billing_cycle] ?? node.billing_cycle}
+        {money(node.price, node.currency)} / {cycle(node.billing_cycle)}
       </span>
     </span>
   )

@@ -3,7 +3,7 @@ import { ArrowDown, ArrowUp, ArrowUpDown } from "lucide-react"
 
 import { Country, StatusDot, monthUsage, statusLabel } from "@/components/NodeCard"
 import type { Node } from "@/lib/api"
-import { CYCLES, FOREVER, bytes, daysUntil, money, osName, pair, percent, rate } from "@/lib/format"
+import { cycle, FOREVER, bytes, daysUntil, money, osName, pair, percent, rate } from "@/lib/format"
 import { cn } from "@/lib/utils"
 
 type SortKey = "name" | "cpu" | "mem" | "disk" | "traffic" | "expiry"
@@ -107,7 +107,7 @@ const COLUMNS: {
     className: "hidden lg:table-cell",
     cell: (n) => (
       <span className="block truncate text-xs text-muted-foreground">
-        {n.price > 0 ? `${money(n.price, n.currency)} / ${CYCLES[n.billing_cycle] ?? n.billing_cycle}` : "免费"}
+        {n.price > 0 ? `${money(n.price, n.currency)} / ${cycle(n.billing_cycle)}` : "免费"}
       </span>
     ),
   },
