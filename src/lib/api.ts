@@ -136,6 +136,11 @@ export function safeNodes(nodes: Node[]): Node[] {
 export function useNodes() {
   const [nodes, setNodes] = useState<Node[] | null>(null)
   const [error, setError] = useState<string | null>(null)
+  // When the last frame arrived, and whether the stream carrying them is open.
+  // Both are for the page's own "is this still live?" line: a status page that
+  // silently stops updating shows yesterday's numbers with today's confidence.
+  const [updatedAt, setUpdatedAt] = useState(0)
+  const [live, setLive] = useState(false)
   // Set when the hub answers 401: the status page has been closed to anonymous
   // callers since this tab loaded. The hub also ends the stream, so this surfaces
   // on the fallback fetch the reconnect starts; a close allows a client to
@@ -154,6 +159,7 @@ export function useNodes() {
       setNodes(safe)
       setError(null)
       setClosed(false)
+      setUpdatedAt(Date.now())
     }
 
     const fetchOnce = () =>
@@ -185,8 +191,12 @@ export function useNodes() {
           poll = null
         }
       }
+      socket.onopen = () => setLive(true)
       socket.onerror = () => socket?.close()
       socket.onclose = () => {
+        // The fallback poll below still updates the figures, at a fifth of the
+        // rate; `live` is about the stream, which is what the page says.
+        setLive(false)
         if (closed) return
         poll ??= setInterval(fetchOnce, 5000)
         retry = setTimeout(connect, 5000)
@@ -202,5 +212,5 @@ export function useNodes() {
     }
   }, [])
 
-  return { nodes, error, closed }
+  return { nodes, error, closed, updatedAt, live }
 }
