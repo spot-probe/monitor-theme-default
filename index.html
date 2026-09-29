@@ -4,6 +4,30 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="icon" href="/favicon.svg" />
+    <!-- iOS ignores an SVG favicon on the home screen, so the touch icon is a
+         rendered PNG of the same mark. -->
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <!--
+      The title is replaced at runtime with the hub's site name, so it stays the
+      generic one here; the tags below are what a crawler or a chat client reads
+      off the HTML it was served, and a link pasted into a group had no preview at
+      all before them. The image is a screenshot of this very theme, packaged
+      beside these tags rather than generated per deployment: a status page's
+      origin is whatever domain its operator put in front of it, so the URL is
+      relative.
+    -->
+    <meta name="description" content="实时状态页：每台节点的在线状态、可用率时间轴与资源用量。" />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="状态页" />
+    <meta property="og:description" content="实时状态页：每台节点的在线状态、可用率时间轴与资源用量。" />
+    <meta property="og:image" content="/og.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <!-- The browser chrome follows the scheme the page is drawn in: on a phone
+         this is the one thing painted before the page itself is. -->
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f7f8fa" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0f1218" />
     <title>Monitor</title>
   </head>
   <body>
