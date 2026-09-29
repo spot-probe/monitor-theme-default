@@ -272,7 +272,14 @@ function Price({ node }: { node: Node }) {
   )
 }
 
-export function NodeCard({ node, onOpen }: { node: Node; onOpen: () => void }) {
+/** 卡片上四个指标各自的开关，来自主题设置。 */
+export type CardMetrics = { cpu: boolean; mem: boolean; disk: boolean; traffic: boolean }
+
+export function NodeCard({ node, onOpen, metrics }: {
+  node: Node
+  onOpen: () => void
+  metrics: CardMetrics
+}) {
   const m = node.metrics
 
   return (
@@ -341,27 +348,37 @@ export function NodeCard({ node, onOpen }: { node: Node; onOpen: () => void }) {
           <div className="mt-5 grid grid-cols-2 gap-x-4 gap-y-4">
             {/* The core count belongs beside the word CPU: it is what the
                 percentage and the load averages are both measured against. */}
-            <Meter
-              label={`CPU ${node.cpu_cores} 核`}
-              pct={m ? m.cpu : null}
-              foot={m ? m.load.map((n) => n.toFixed(2)).join(" ") : "—"}
-            />
-            <Meter
-              label="内存"
-              pct={m ? percent(m.mem_used, m.mem_total) : null}
-              foot={m ? pair(m.mem_used, m.mem_total) : bytes(node.mem_total)}
-            />
-            <Meter
-              label="硬盘"
-              pct={m ? percent(m.disk_used, m.disk_total) : null}
-              foot={m ? pair(m.disk_used, m.disk_total) : bytes(node.disk_total)}
-            />
-            <Meter
-              label="流量"
-              pct={node.traffic_limit > 0 ? percent(monthUsage(node), node.traffic_limit) : null}
-              empty={FOREVER}
-              foot={trafficFoot(node)}
-            />
+            {/* 站长可以关掉其中任意一项。App 已经把「四项全关」挡在外面，所以这里
+                只按开关渲染。 */}
+            {metrics.cpu && (
+              <Meter
+                label={`CPU ${node.cpu_cores} 核`}
+                pct={m ? m.cpu : null}
+                foot={m ? m.load.map((n) => n.toFixed(2)).join(" ") : "—"}
+              />
+            )}
+            {metrics.mem && (
+              <Meter
+                label="内存"
+                pct={m ? percent(m.mem_used, m.mem_total) : null}
+                foot={m ? pair(m.mem_used, m.mem_total) : bytes(node.mem_total)}
+              />
+            )}
+            {metrics.disk && (
+              <Meter
+                label="硬盘"
+                pct={m ? percent(m.disk_used, m.disk_total) : null}
+                foot={m ? pair(m.disk_used, m.disk_total) : bytes(node.disk_total)}
+              />
+            )}
+            {metrics.traffic && (
+              <Meter
+                label="流量"
+                pct={node.traffic_limit > 0 ? percent(monthUsage(node), node.traffic_limit) : null}
+                empty={FOREVER}
+                foot={trafficFoot(node)}
+              />
+            )}
           </div>
 
           {/* Three columns read downwards: rate, lifetime total, then the deadline

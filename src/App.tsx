@@ -4,6 +4,7 @@ import { LayoutDashboard, LogIn, Moon, Sun } from "lucide-react"
 import { NodeCard } from "@/components/NodeCard"
 import { NodeTable } from "@/components/NodeTable"
 import { Summary } from "@/components/Summary"
+import { loadConfig } from "@/lib/config"
 import { Toolbar, type View } from "@/components/Toolbar"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -81,13 +82,32 @@ function useTheme() {
   ] as const
 }
 
-/** A preference, not a route: which view you left on is where you come back to. */
-function useView() {
-  const [view, setView] = useState<View>(() => (localStorage.getItem("view") === "list" ? "list" : "grid"))
-  useEffect(() => {
-    localStorage.setItem("view", view)
-  }, [view])
-  return [view, setView] as const
+/** The view this browser was left on, or null when it never made a choice. */
+function storedView(): View | null {
+  const saved = localStorage.getItem("view")
+  return saved === "list" || saved === "grid" ? saved : null
+}
+
+/**
+ * A preference, not a route: which view you left on is where you come back to.
+ *
+ * Only a visitor's own switch is written down, and their choice outranks the
+ * theme's `default_view`. The fallback is applied while rendering rather than
+ * copied into state by an effect: it arrives with the config, and an effect
+ * would burn a second render on every visit to reach a value that is derivable.
+ *
+ * Persisting on mount -- which is what this did -- made the first render's value
+ * indistinguishable from a choice, so the setting could never reach anyone who
+ * had loaded the page before. The same mistake the colour scheme made; see
+ * `useTheme` above.
+ */
+function useView(fallback: View) {
+  const [chosen, setChosen] = useState<View | null>(storedView)
+  const choose = useCallback((next: View) => {
+    localStorage.setItem("view", next)
+    setChosen(next)
+  }, [])
+  return [chosen ?? fallback, choose] as const
 }
 
 /**
@@ -130,8 +150,11 @@ export default function App() {
   const [me, setMe] = useState<Me | null>(null)
   const [meError, setMeError] = useState("")
   const { nodes, error, closed, updatedAt, live } = useNodes()
+  // The operator's settings, from the theme's own manifest defaults. Held until
+  // read so the list is not drawn once with the summary and once without it.
+  const [config, setConfig] = useState<Record<string, unknown> | null>(null)
   const [open, go] = useNodeRoute()
-  const [view, setView] = useView()
+  const [view, setView] = useView(config?.default_view === "list" ? "list" : "grid")
   // A group filter, not persisted -- unlike the view. Left selected from an
   // earlier visit it would read as machines having gone missing.
   const [group, setGroup] = useState<string | null>(null)
@@ -150,6 +173,9 @@ export default function App() {
 
   useEffect(() => {
     loadMe()
+    // Requested alongside /me rather than after it: it never rejects, any failure
+    // yielding the defaults. A hub without the settings endpoint answers 404.
+    void loadConfig().then(setConfig)
     // Warmed here rather than left to Suspense, which requests the chunk only
     // once a render reaches the detail view, itself waiting on /me. Without this
     // the split trades its first paint for a full-page skeleton over the first
@@ -194,6 +220,20 @@ export default function App() {
   // terms the pass above uses, plus one call that undoes all three. The empty
   // state needs both: the toolbar's own 清除筛选 clears only the chips, and
   // neither the search box nor a group tab is one.
+  // Which of the four meters a card carries. All four off would leave a card with
+  // nothing but its name and a state chip, so it falls back to the core pair this
+  // theme has always shown rather than drawing an empty body.
+  const wanted = {
+    cpu: config?.card_cpu !== false,
+    mem: config?.card_mem !== false,
+    disk: config?.card_disk !== false,
+    traffic: config?.card_traffic !== false,
+  }
+  const cardMetrics =
+    wanted.cpu || wanted.mem || wanted.disk || wanted.traffic
+      ? wanted
+      : { cpu: true, mem: true, disk: false, traffic: false }
+
   const narrowing = needle !== "" || activeGroup !== null || filters.length > 0
   const clearAll = () => {
     setQuery("")
@@ -302,14 +342,14 @@ export default function App() {
             <Skeleton className="h-96" />
           ) : selected ? (
             <Suspense fallback={<Skeleton className="h-96" />}>
-              <NodeDetail node={selected} onBack={() => go(null)} />
+              <NodeDetail node={selected} showPeak={config?.chart_peak === true} onBack={() => go(null)} />
             </Suspense>
           ) : (
             <p className="py-16 text-center text-sm text-muted-foreground">
               节点不存在或未公开。<button className="underline" onClick={() => go(null)}>返回列表</button>
             </p>
           )
-        ) : !nodes ? (
+        ) : !nodes || !config ? (
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {[0, 1, 2].map((i) => (
               <Skeleton key={i} className="h-72" />
@@ -317,17 +357,21 @@ export default function App() {
           </div>
         ) : (
           <>
-            <Summary
-              nodes={sorted}
-              // The same 离线 chip the toolbar carries, so the count and the filter
-              // cannot come to mean different things. A toggle, so a second click
-              // on the tile is never a dead one.
-              filtering={filters.includes("offline")}
-              onFilter={() =>
-                setFilters((f) => (f.includes("offline") ? f.filter((k) => k !== "offline") : [...f, "offline"]))
-              }
-              onOpen={(n) => go(n.id)}
-            />
+            {/* 站长在主题设置里可以关掉这四格；关掉后留出的空档由工具栏自己吸收，
+                不需要额外占位。默认是开，与这个主题一直以来的样子一致。 */}
+            {config.show_summary === true && (
+              <Summary
+                nodes={sorted}
+                // The same 离线 chip the toolbar carries, so the count and the filter
+                // cannot come to mean different things. A toggle, so a second click
+                // on the tile is never a dead one.
+                filtering={filters.includes("offline")}
+                onFilter={() =>
+                  setFilters((f) => (f.includes("offline") ? f.filter((k) => k !== "offline") : [...f, "offline"]))
+                }
+                onOpen={(n) => go(n.id)}
+              />
+            )}
             {/* Ten pixels either side of the toolbar, not twenty. It belongs to
                 the list it acts on, so the page's own rhythm between sections
                 would read as a break the toolbar is not. */}
@@ -344,6 +388,8 @@ export default function App() {
                 groups={names}
                 group={activeGroup}
                 onGroup={setGroup}
+                // 站长可以让这一行常驻，即使一个分组都还没有。
+                alwaysGroups={config.group_tabs === true}
               />
               {filtered.length === 0 ? (
                 <div className="py-16 text-center">
@@ -371,7 +417,12 @@ export default function App() {
                 // data. The shorter cards take the slack at the bottom.
                 <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                   {filtered.map((n) => (
-                    <NodeCard key={n.id} node={n} onOpen={() => go(n.id)} />
+                    <NodeCard
+                      key={n.id}
+                      node={n}
+                      metrics={cardMetrics}
+                      onOpen={() => go(n.id)}
+                    />
                   ))}
                 </div>
               )}
