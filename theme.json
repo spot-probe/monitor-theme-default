@@ -2,8 +2,85 @@
   "name": "默认主题",
   "short": "default",
   "description": "内置状态面板，浅色语义配色",
-  "version": "1.8.1",
+  "version": "1.8.2",
   "author": "jacob-bytes",
   "url": "https://github.com/spot-probe/monitor-theme-default",
-  "api": 1
+  "api": 1,
+  "config": [
+    {
+      "type": "title",
+      "label": "布局"
+    },
+    {
+      "key": "show_summary",
+      "type": "boolean",
+      "label": "显示汇总",
+      "default": true,
+      "help": "节点列表上方的节点数、最忙节点、流量和网速四格"
+    },
+    {
+      "key": "default_view",
+      "type": "select",
+      "label": "默认视图",
+      "default": "grid",
+      "options": [
+        {
+          "value": "grid",
+          "label": "网格"
+        },
+        {
+          "value": "list",
+          "label": "列表"
+        }
+      ],
+      "help": "访客自己切过视图之后，以访客的选择为准"
+    },
+    {
+      "key": "group_tabs",
+      "type": "boolean",
+      "label": "分组页签常驻",
+      "default": false,
+      "help": "默认只在有节点分了组时出现；开启后没有分组也会占一行"
+    },
+    {
+      "type": "title",
+      "label": "卡片"
+    },
+    {
+      "key": "card_cpu",
+      "type": "boolean",
+      "label": "显示 CPU",
+      "default": true
+    },
+    {
+      "key": "card_mem",
+      "type": "boolean",
+      "label": "显示内存",
+      "default": true
+    },
+    {
+      "key": "card_disk",
+      "type": "boolean",
+      "label": "显示硬盘",
+      "default": true
+    },
+    {
+      "key": "card_traffic",
+      "type": "boolean",
+      "label": "显示流量",
+      "default": true,
+      "help": "四项都关掉时仍会显示 CPU 与内存，否则卡片只剩一个名字"
+    },
+    {
+      "type": "title",
+      "label": "图表"
+    },
+    {
+      "key": "chart_peak",
+      "type": "boolean",
+      "label": "标出峰值",
+      "default": true,
+      "help": "速率图上画一条「均值到峰值」的带，标题与悬停里给出这一段里的最高速率；需要 hub 提供每分钟峰值，老 hub 上不显示"
+    }
+  ]
 }

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react"
 import { ArrowLeft, StickyNote } from "lucide-react"
 import {
-  Area, AreaChart, Brush, CartesianGrid, ComposedChart, Line, LineChart, ResponsiveContainer,
+  Area, AreaChart, Brush, CartesianGrid, ComposedChart, Line, ResponsiveContainer,
   Tooltip, XAxis, YAxis,
 } from "recharts"
 
@@ -27,6 +27,18 @@ type Point = {
   disk_used: number
   net_rx: number
   net_tx: number
+  /**
+   * The highest rate the agent measured across one report interval inside this
+   * bucket, never below the mean beside it. Absent from a hub predating the
+   * column, which is why the peak is drawn only from rows that carry one -- and
+   * why a bucket whose peak is absent falls back to its own mean rather than
+   * claiming a peak of zero.
+   */
+  net_rx_max?: number
+  net_tx_max?: number
+  /** 均值到峰值的一段，画成线后面那条带。没有峰值数据时上下沿重合。 */
+  rx_band: [number, number]
+  tx_band: [number, number]
   /**
    * Absent until the hub is new enough to put it in a history row. Optional
    * rather than defaulted to zero, so a hub without it draws no swap line at all
@@ -245,7 +257,12 @@ function Fact({ label, value }: { label: string; value?: string | number | null 
   )
 }
 
-export function NodeDetail({ node, onBack }: { node: Node; onBack: () => void }) {
+export function NodeDetail({ node, showPeak, onBack }: {
+  node: Node
+  /** 站长在主题设置里可以关掉峰值；关掉后图与 hub 没有这个字段时完全一样。 */
+  showPeak: boolean
+  onBack: () => void
+}) {
   const [tab, setTab] = useState<(typeof TABS)[number]["key"]>("resources")
   // Each tab keeps its own range: a 7-day trend and a 1-hour trace answer
   // different questions.
@@ -349,24 +366,43 @@ export function NodeDetail({ node, onBack }: { node: Node; onBack: () => void })
   )
 
   // The hub answers in seconds; the time axis requires milliseconds.
+  // 每一行还带一条「均值到峰值」的带：图的线是均值（它才积分为累计流量），而一次
+  // 15 秒测速摊到一分钟只剩四分之一。站长关掉峰值、或 hub 没有这一列时，带的上下沿
+  // 重合、高度为零，于是轴顶与画面都回到原样，不需要另一条分支。
   const metricRows = useMemo(
-    () => (data?.metrics ?? []).map((m) => ({ ...m, ts: m.ts * 1_000 })),
-    [data],
+    () =>
+      (data?.metrics ?? []).map((m) => ({
+        ...m,
+        ts: m.ts * 1_000,
+        rx_band: [m.net_rx, showPeak ? (m.net_rx_max ?? m.net_rx) : m.net_rx],
+        tx_band: [m.net_tx, showPeak ? (m.net_tx_max ?? m.net_tx) : m.net_tx],
+      })),
+    [data, showPeak],
   )
+
+  // 这一段里的最高速率，只有 hub 送来了 `net_*_max` 才算得出来 —— 拿「均值里的最大
+  // 值」当峰值是错的，所以宁可不说。
+  const peak = useMemo(() => {
+    const rows = data?.metrics ?? []
+    if (!showPeak || !rows.some((m) => m.net_rx_max !== undefined)) return null
+    const hi = (pick: (m: Point) => number | undefined) => rows.reduce((top, m) => Math.max(top, pick(m) ?? 0), 0)
+    return { rx: hi((m) => m.net_rx_max), tx: hi((m) => m.net_tx_max) }
+  }, [data, showPeak])
 
   // Axis tops for the two panels with no capacity to measure against. CPU and a
   // transfer rate do not express fullness: against a fixed 0-100, a machine
   // sitting at 0.4% draws as a line along the panel's floor. Memory and disk keep
   // their totals as tops, where fullness is the entire question.
   const tops = useMemo(() => {
-    const max = (pick: (m: Point) => number) =>
+    const max = (pick: (m: (typeof metricRows)[number]) => number) =>
       metricRows.reduce((hi, m) => Math.max(hi, pick(m)), 0)
     return {
       // A floor of 4%, or a machine that never exceeds 0.4% would get an axis of
       // 0-0.4 and render every scheduler blip as a peak. Capped at 100.
       cpu: axisTop(max((m) => m.cpu), 4, 10, 100),
-      // Base 1024, so the steps are round in the unit `axisBytes` prints.
-      rate: axisTop(max((m) => Math.max(m.net_rx, m.net_tx)), 1024, 1024),
+      // Base 1024, so the steps are round in the unit `axisBytes` prints. Fitted
+      // to the band rather than the line, or the peaks would run off the top.
+      rate: axisTop(max((m) => Math.max(m.rx_band[1], m.tx_band[1])), 1024, 1024),
       // A load average has no capacity to be a fraction of, so it climbs a ladder
       // too -- but its floor is a quarter rather than the CPU's 4%: these are
       // counts, not percentages, and 0.25 is where a quiet single-core box sits.
@@ -877,7 +913,7 @@ export function NodeDetail({ node, onBack }: { node: Node; onBack: () => void })
           {/* A rate has no total to be a fraction of, so this one climbs the
               ladder like CPU rather than pinning to a capacity. */}
           <Panel
-            title="网络速率"
+            title={peak ? `网络速率 · 峰值 ↓ ${rate(peak.rx)} · ↑ ${rate(peak.tx)}` : "网络速率"}
             value={
               last && (
                 <Reading at={last.ts}>
@@ -894,20 +930,59 @@ export function NodeDetail({ node, onBack }: { node: Node; onBack: () => void })
             }
           >
             <ResponsiveContainer>
-              <LineChart data={metricRows} margin={{ right: hasLoad ? LOAD_AXIS : 0 }}>
+              <ComposedChart data={metricRows} margin={{ right: hasLoad ? LOAD_AXIS : 0 }}>
                 <CartesianGrid strokeDasharray="3 3" className="stroke-muted" vertical={false} />
                 <XAxis {...timeAxis(metricRows)} />
                 <YAxis domain={[0, tops.rate]} ticks={quarters(tops.rate)} tickFormatter={axisBytes} unit="/s" width={Y_WIDTH} {...AXIS} />
                 <Tooltip
                   wrapperStyle={WRAPPER}
-                  content={<ChartTooltip format={rate} />}
+                  content={
+                    // 均值和峰值并排，因为这条线画的正是均值；行里没有峰值字段
+                    // （老 hub）时只报均值，与这些设置都不存在时一样。
+                    <ChartTooltip
+                      format={rate}
+                      hint={(item) => {
+                        const max = item.payload?.[item.dataKey === "net_rx" ? "net_rx_max" : "net_tx_max"]
+                        return peak && typeof max === "number" ? `峰值 ${rate(max)}` : undefined
+                      }}
+                    />
+                  }
                   cursor={<Crosshair domainTop={tops.rate} format={rate} />}
                 />
+                {/* 均值到峰值那条带。一分钟的突发在一天的轴上不到一像素宽，只填色
+                    看不见，所以上沿描一道虚线；虚线而不是淡边，是因为两条速率靠色
+                    阶区分，淡边会取到另一条线的颜色。 */}
+                {peak && (
+                  <>
+                    <Area
+                      dataKey="rx_band"
+                      stroke="var(--color-chart-1)"
+                      strokeWidth={1}
+                      strokeDasharray="2 2"
+                      fill="var(--color-chart-1)"
+                      fillOpacity={0.16}
+                      isAnimationActive={false}
+                      tooltipType="none"
+                      legendType="none"
+                    />
+                    <Area
+                      dataKey="tx_band"
+                      stroke="var(--color-chart-4)"
+                      strokeWidth={1}
+                      strokeDasharray="2 2"
+                      fill="var(--color-chart-4)"
+                      fillOpacity={0.16}
+                      isAnimationActive={false}
+                      tooltipType="none"
+                      legendType="none"
+                    />
+                  </>
+                )}
                 {/* Two lines, so two hues -- and the same pair the summary's
                     sparkline uses for the same two directions. */}
                 <Line dataKey="net_rx" name="下行" stroke="var(--color-chart-1)" {...SERIES} />
                 <Line dataKey="net_tx" name="上行" stroke="var(--color-chart-4)" {...SERIES} />
-              </LineChart>
+              </ComposedChart>
             </ResponsiveContainer>
           </Panel>
 

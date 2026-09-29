@@ -58,7 +58,7 @@ function GroupTab({ active, onClick, children }: {
  * throughput. What this row holds is the three things that act on the list below
  * -- which group is in view, which attention filter is on, and how it is laid out.
  */
-export function Toolbar({ nodes, counts, view, onView, query, onQuery, filters, onFilters, groups, group, onGroup }: {
+export function Toolbar({ nodes, counts, view, onView, query, onQuery, filters, onFilters, groups, group, onGroup, alwaysGroups }: {
   nodes: Node[]
   counts: { shown: number; total: number }
   view: View
@@ -71,6 +71,8 @@ export function Toolbar({ nodes, counts, view, onView, query, onQuery, filters, 
   groups: string[]
   group: string | null
   onGroup: (group: string | null) => void
+  /** 站长要求这一行常驻：没有分组也占位。默认只在有分组时出现。 */
+  alwaysGroups: boolean
 }) {
   const toggleFilter = (key: FilterKey) =>
     onFilters(filters.includes(key) ? filters.filter((k) => k !== key) : [...filters, key])
@@ -83,10 +85,11 @@ export function Toolbar({ nodes, counts, view, onView, query, onQuery, filters, 
 
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-1">
-      {/* Only once the fleet actually carries groups. A lone "全部节点" tab would
-          be a control that cannot do anything, and the row is the widest thing
-          here -- it should not cost space until it earns it. */}
-      {groups.length > 0 && (
+      {/* Only once the fleet actually carries groups, unless the operator has
+          asked for the row to stay: a lone "全部节点" tab is a control that cannot
+          do anything, and the row is the widest thing here, so it does not cost
+          space until it earns it -- or until someone says otherwise. */}
+      {(groups.length > 0 || alwaysGroups) && (
         <>
           <div
             role="group"
