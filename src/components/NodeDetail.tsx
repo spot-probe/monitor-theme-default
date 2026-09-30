@@ -91,8 +91,10 @@ const RANGES_FOR = { resources: RANGES, latency: RANGES.filter((r) => r.hours <=
  *
  * A week, and fixed: the range selector above the charts picks what *they* draw,
  * and a timeline that resized with it would answer a different question each time
- * it moved. Seven days is also the most an anonymous caller may ask the hub for,
- * and what the hub retains by default.
+ * it moved. Seven days **used to be** the most an anonymous caller could ask for and
+ * what the hub retained by default; the hub now answers up to the operator's
+ * retention (ninety days out of the box), so this is a week because the timeline is
+ * a fixed question -- not because the hub stops there.
  */
 const AVAILABILITY_HOURS = 168
 
