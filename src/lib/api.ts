@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react"
+import { FALLBACK_DAYS, historyDays } from "./ranges.ts"
 
 import type { Uptime } from "./uptime"
 
@@ -88,6 +89,33 @@ export class ApiError extends Error {
     super(message)
     this.status = status
   }
+}
+
+/**
+ * How far back the hub keeps history -- what the range picker may offer and what the
+ * availability timeline covers.
+ *
+ * A hub that predates the field, or one that cannot be reached, keeps the week this
+ * theme has always offered; `historyDays` does that fallback, so this only has to
+ * carry the answer.
+ */
+export function useHistoryDays(): number {
+  const [days, setDays] = useState(FALLBACK_DAYS)
+  useEffect(() => {
+    let live = true
+    api<{ history_days?: unknown }>("/me")
+      .then((me) => {
+        if (live) setDays(historyDays(me))
+      })
+      .catch(() => {
+        // The week stands; a status page that cannot read one setting still has a
+        // page to draw.
+      })
+    return () => {
+      live = false
+    }
+  }, [])
+  return days
 }
 
 export async function api<T>(path: string, init?: RequestInit): Promise<T> {
