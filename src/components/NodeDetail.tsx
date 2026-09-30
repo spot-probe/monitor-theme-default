@@ -13,7 +13,8 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { AvailabilityCard } from "@/components/Availability"
 import { ChartTooltip, Crosshair, Swatch } from "@/components/ChartTooltip"
 import { Country, Status } from "@/components/NodeCard"
-import { api, type Node } from "@/lib/api"
+import { api, useHistoryDays, type Node } from "@/lib/api"
+import { rangesFor } from "@/lib/ranges"
 import {
   axisBytes, axisTop, bytes, clockFor, despike, quarters, cpuName, cycle, FOREVER, money, osName, rate,
   stamp, timeTicks,
@@ -74,29 +75,6 @@ type Probes = Record<string, string>
  */
 type Loss = Record<string, number>
 
-const RANGES = [
-  { hours: 1, label: "1 小时" },
-  { hours: 6, label: "6 小时" },
-  { hours: 24, label: "24 小时" },
-  { hours: 168, label: "7 天" },
-]
-
-// Latency stops at a day. A week-wide bucket would still carry the spread and the
-// loss figure, but a week of probe history is outside this page's purpose, and
-// these are the windows in which every ping remains on the chart.
-const RANGES_FOR = { resources: RANGES, latency: RANGES.filter((r) => r.hours <= 24) }
-
-/**
- * How much of the past the availability timeline covers, in hours.
- *
- * A week, and fixed: the range selector above the charts picks what *they* draw,
- * and a timeline that resized with it would answer a different question each time
- * it moved. Seven days **used to be** the most an anonymous caller could ask for and
- * what the hub retained by default; the hub now answers up to the operator's
- * retention (ninety days out of the box), so this is a week because the timeline is
- * a fixed question -- not because the hub stops there.
- */
-const AVAILABILITY_HOURS = 168
 
 const AXIS = { stroke: "currentColor", fontSize: 11, tickLine: false, axisLine: false }
 
@@ -266,6 +244,16 @@ export function NodeDetail({ node, showPeak, onBack }: {
   onBack: () => void
 }) {
   const [tab, setTab] = useState<(typeof TABS)[number]["key"]>("resources")
+  // What this hub keeps, which is what the picker may offer and how far the
+  // availability timeline reaches. A rung above it would draw a shorter chart than
+  // the one that was picked, which reads as lost data rather than as a limit.
+  const days = useHistoryDays()
+  const historyHours = days * 24
+  const rangeOptions = rangesFor(days)
+  // The latency chart stops at a day: a week-wide bucket still carries the spread
+  // and the loss figure, but a week of probe history is outside this page's purpose.
+  const offers = (key: string) =>
+    key === "latency" ? rangeOptions.filter((r) => r.hours <= 24) : rangeOptions
   // Each tab keeps its own range: a 7-day trend and a 1-hour trace answer
   // different questions.
   const [ranges, setRanges] = useState({ resources: 6, latency: 6 })
@@ -299,7 +287,7 @@ export function NodeDetail({ node, showPeak, onBack }: {
     // oxlint-disable-next-line react/set-state-in-effect
     setAvail(null)
     api<{ availability: Availability | null }>(
-      `/nodes/${node.id}/metrics?hours=${AVAILABILITY_HOURS}&series=availability`,
+      `/nodes/${node.id}/metrics?hours=${historyHours}&series=availability`,
     )
       .then((next) => { if (active) setAvail(next.availability ?? null) })
       // No error of its own: the bar is an addition to this screen, and the charts
@@ -307,7 +295,9 @@ export function NodeDetail({ node, showPeak, onBack }: {
       // bar therefore leaves the page otherwise intact.
       .catch(() => { if (active) setAvail(null) })
     return () => { active = false }
-  }, [node.id])
+    // `historyHours` in the deps: it starts at the fallback week and becomes what
+    // the hub keeps once `/api/me` answers, and the bar must follow it.
+  }, [node.id, historyHours])
 
   useEffect(() => {
     let active = true
@@ -566,7 +556,7 @@ export function NodeDetail({ node, showPeak, onBack }: {
         </dl>
       </Card>
 
-      {avail && <AvailabilityCard data={avail} hours={AVAILABILITY_HOURS} />}
+      {avail && <AvailabilityCard data={avail} hours={historyHours} />}
 
       {/* The operator's own note, which only a signed-in browser is sent at all
           (`node_view` attaches `remark` with the other panel-only fields), so this
@@ -599,7 +589,7 @@ export function NodeDetail({ node, showPeak, onBack }: {
           label="时间范围"
           value={hours}
           onChange={(next) => setRanges((all) => ({ ...all, [tab]: next }))}
-          items={RANGES_FOR[tab].map((r) => ({ value: r.hours, label: r.label }))}
+          items={offers(tab).map((r) => ({ value: r.hours, label: r.label }))}
         />
         {tab === "latency" && (
           <label className="flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground">
