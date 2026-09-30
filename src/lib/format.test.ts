@@ -4,7 +4,7 @@
 //
 // Nothing imports it, so the bundle never includes it.
 import {
-  axisBytes, axisTop, bytes, cpuName, cycle, daysUntil, despike, osName, pair, quarters, timeTicks, uptime,
+  axisBytes, axisTop, bytes, cpuName, cycle, daysUntil, despike, money, osName, pair, quarters, timeTicks, uptime,
 } from "./format.ts"
 
 let failed = 0
@@ -127,6 +127,22 @@ eq(
   ["monthly", "yearly", "12m", "60m", "18m", "biennial", "36m", "once", "weekly"].map(cycle),
   ["月", "年", "年", "5 年", "18 个月", "两年", "三年", "一次性", "weekly"],
   "付款周期",
+)
+
+// 货币一律放在数字前面：代码跟在数字后面（`100.00 HKD`）与 `$100.00` 同列看着是两种
+// 风格。原来那五个符号保持不变，其余借 Intl 的完整符号。
+eq(
+  ["USD", "CNY", "EUR", "GBP", "JPY", "HKD", "TWD", "SGD", "KRW", "XYZ", "USDT", ""].map((c) =>
+    money(1234.5, c),
+  ),
+  [
+    "$1,234.50", "¥1,234.50", "€1,234.50", "£1,234.50", "¥1,235",
+    // Intl 用 U+00A0 分隔代码与金额，回退那条也一样：普通空格会让价格从两
+    // 者之间折行。
+    "HK$1,234.50", "NT$1,234.50", "SGD\u00A01,234.50", "₩1,235",
+    "XYZ\u00A01,234.50", "USDT\u00A01,234.50", "1,234.50",
+  ],
+  "货币显示",
 )
 
 if (failed) {
