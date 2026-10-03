@@ -48,9 +48,17 @@ export type Availability = {
  * red would invent downtime. It is the grey the page already uses for a node that
  * never connected.
  */
+/**
+ * The timeline's fills. `-fg` rather than the plain tokens: those are the page's
+ * brightest colours (green-500/amber-500) and the strip is made of many small
+ * blocks, so it read as the loudest thing on a page whose palette is otherwise
+ * muted -- and amber outshone green, which put "partly broken" above "fine".
+ * These two are the theme's own deeper steps, already used for text and checked
+ * for contrast. `down` stays the destructive red and `unknown` the soft grey.
+ */
 export const TONE_CLASS = {
-  ok: "bg-ok",
-  warn: "bg-warn",
+  ok: "bg-ok-fg",
+  warn: "bg-warn-fg",
   down: "bg-destructive",
   unknown: "bg-muted-foreground/25",
 } as const
