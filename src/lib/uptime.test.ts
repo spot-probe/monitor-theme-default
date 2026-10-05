@@ -60,8 +60,8 @@ eq(segmentTone(seg(0, 60, false)), "unknown", "节点不存在的那一小时是
 eq(segmentTone(seg(60, 60, false)), "unknown", "unknown 永远压过 n/m")
 
 // segmentText: the words the tooltip and a screen reader share.
-eq(segmentText(seg(60, 60)), "正常 · 上报 60/60 分钟", "正常段的读法")
-eq(segmentText(seg(24, 24)), "正常 · 上报 24/24 分钟", "部分小时按它自己的 m 读")
+eq(segmentText(seg(60, 60)), "正常", "满覆盖段不再重复分钟数（轴上一片绿已说明）")
+eq(segmentText(seg(24, 24)), "正常", "满覆盖的部分小时同样不报分钟")
 eq(segmentText(seg(48, 60)), "部分异常 · 上报 48/60 分钟", "部分异常段的读法")
 eq(segmentText(seg(0, 60)), "离线 · 上报 0/60 分钟", "离线段的读法")
 eq(segmentText(seg(0, 60, false)), "无数据 · 该时段没有上报记录", "无数据段不报 n/m")
