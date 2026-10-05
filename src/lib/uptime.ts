@@ -107,8 +107,9 @@ export function availabilityText(fraction: number): string {
  * `m` is the minutes the segment was expected to cover -- its width in minutes,
  * except at the ends of the window where it is partial -- and `n` the minutes
  * actually reported. Both are minutes whatever the segment's width, which is what
- * lets the tooltip say "上报 180/180 分钟" for a three-hour segment and
- * "上报 1440/1440 分钟" for a day.
+ * lets the tooltip report the covered minutes **when some are missing**. A fully
+ * covered segment says nothing about minutes: the bar already shows the gap, and
+ * "180/180" on a green run is a repeat rather than a reading.
  *
  * `known` is false for the stretch before the node's history begins, whether
  * because the node was added later or because the hub no longer retains that far
@@ -156,7 +157,11 @@ export function segmentTone(s: Segment): Tone {
 /** What one segment says, in the words the tooltip and a screen reader share. */
 export function segmentText(s: Segment): string {
   if (!s.known) return `${TONE_LABEL.unknown} · 该时段没有上报记录`
-  return `${TONE_LABEL[segmentTone(s)]} · 上报 ${s.n}/${s.m} 分钟`
+  // 满覆盖时**不再报分钟数**：轴上一片绿已经说明"这段时间有数据"，把 180/180 再写一遍
+  // 只是重复。缺了才说 —— 那时"150/180 分钟"才是新信息。
+  return s.n === s.m
+    ? `${TONE_LABEL[segmentTone(s)]}`
+    : `${TONE_LABEL[segmentTone(s)]} · 上报 ${s.n}/${s.m} 分钟`
 }
 
 /**

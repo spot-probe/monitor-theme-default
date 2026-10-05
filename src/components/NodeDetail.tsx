@@ -905,7 +905,7 @@ export function NodeDetail({ node, showPeak, onBack }: {
           {/* A rate has no total to be a fraction of, so this one climbs the
               ladder like CPU rather than pinning to a capacity. */}
           <Panel
-            title={peak ? `网络速率 · 峰值 ↓ ${rate(peak.rx)} · ↑ ${rate(peak.tx)}` : "网络速率"}
+            title={peak ? `网络速率 · 整段峰值 ↓ ${rate(peak.rx)} · ↑ ${rate(peak.tx)}` : "网络速率"}
             value={
               last && (
                 <Reading at={last.ts}>
@@ -914,8 +914,11 @@ export function NodeDetail({ node, showPeak, onBack }: {
                       to tell download from upload was to remember which line the
                       tooltip had labelled. */}
                   <span className="inline-flex flex-wrap items-center gap-x-2.5 gap-y-1">
-                    <HeaderSeries color="var(--color-chart-1)" name="↓" value={rate(last.net_rx)} />
-                    <HeaderSeries color="var(--color-chart-4)" name="↑" value={rate(last.net_tx)} />
+                    {/* 这两个数是**最后一个采样点**（`last`）的值，不是峰值，也不是"此刻的瞬时值"。
+                        所以名字里点明"末点" —— 同一次读到的还有副标题的"整段峰值"与
+                        tooltip 的"本段峰值"，三个口径必须各自说清。 */}
+                    <HeaderSeries color="var(--color-chart-1)" name="末点 ↓" value={rate(last.net_rx)} />
+                    <HeaderSeries color="var(--color-chart-4)" name="末点 ↑" value={rate(last.net_tx)} />
                   </span>
                 </Reading>
               )
@@ -935,7 +938,7 @@ export function NodeDetail({ node, showPeak, onBack }: {
                       format={rate}
                       hint={(item) => {
                         const max = item.payload?.[item.dataKey === "net_rx" ? "net_rx_max" : "net_tx_max"]
-                        return peak && typeof max === "number" ? `峰值 ${rate(max)}` : undefined
+                        return peak && typeof max === "number" ? `本段峰值 ${rate(max)}` : undefined
                       }}
                     />
                   }
