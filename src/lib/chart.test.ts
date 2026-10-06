@@ -5,7 +5,7 @@
 // strips the types itself, so this needs no runner or dependency.
 //
 // Nothing imports it, so the bundle never includes it.
-import { chipWidth, crosshairY } from "./chart.ts"
+import { chipWidth, crosshairY, isInternalSeries } from "./chart.ts"
 
 let failed = 0
 function eq(got: unknown, want: unknown, what: string) {
@@ -62,3 +62,13 @@ if (failed) {
   throw new Error("chart 校验未通过")
 }
 console.log("chart 校验通过")
+
+// 内部系列（峰值带 b{id} / c{id}）必须被 tooltip 排除，正常序列不能被误伤。
+// 对应线上真实出现过的 bug：tooltip 里冒出一行 b6（tooltipType="none" 没被遵守）。
+eq(isInternalSeries("b6"), true, "峰值带 b6 是内部系列")
+eq(isInternalSeries("c6"), true, "裁剪后的带 c6 也是")
+eq(isInternalSeries("t6"), false, "原始序列 t6 不是")
+eq(isInternalSeries("s6"), false, "平滑序列 s6 不是")
+eq(isInternalSeries("rx_band"), false, "带宽图的 rx_band 不是")
+eq(isInternalSeries("ts"), false, "时间轴 ts 不是")
+eq(isInternalSeries(6), false, "数字键不是")

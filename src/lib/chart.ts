@@ -43,3 +43,19 @@ export function chipWidth(text: string): number {
   for (const ch of text) width += ch.codePointAt(0)! > 0x7f ? 10 : 6.2
   return Math.ceil(width) + 12
 }
+
+/**
+ * 是不是"内部系列"——只为画阴影而存在、不该出现在 tooltip 里的那条带。
+ *
+ * 延迟图给每个探测建两条内部序列：`b{id}`（均值到峰值的带）与 `c{id}`（裁剪后的带，
+ * 见 `NodeDetail` 里那个 rows builder）。它们**已经**在元素上标了 `tooltipType="none"`
+ * 与 `legendType="none"`，但实测 `tooltipType` 在这一版 recharts 里**没有被遵守** ——
+ * 线上看到过 tooltip 里冒出一行光秃秃的 `b6`（值正好等于该桶的延迟，因为带在缺峰值时
+ * 回退成 `[latency, latency]`）。所以真正的排除放在 tooltip 这一侧。
+ *
+ * 形态写死成"**一个 b 或 c + 一串数字**"，是为了不误伤正常序列（`t6`、`s6`、`l6`、
+ * `rx_band`、`ts` 都不匹配）。两端的约定由 `chart.test.ts` 钉住。
+ */
+export function isInternalSeries(key: unknown): boolean {
+  return typeof key === "string" && /^[bc]\d+$/.test(key)
+}

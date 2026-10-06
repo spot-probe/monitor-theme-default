@@ -1,4 +1,4 @@
-import { chipWidth, crosshairY } from "@/lib/chart"
+import { chipWidth, crosshairY, isInternalSeries } from "@/lib/chart"
 import { stamp } from "@/lib/format"
 import { cn } from "@/lib/utils"
 
@@ -109,6 +109,9 @@ export function ChartTooltip({
     // `undefined` is a series with no sample in this bucket and `null` one whose
     // sample was a timeout: the hub omits the first and sends the second, and only
     // the second has a reading to name.
+    // 内部系列（峰值带）**不进 tooltip**：它在元素上标了 `tooltipType="none"`，但实测这一版
+    // recharts 不遵守，线上因此漏出过一行 `b6`。判定与理由见 `isInternalSeries`。
+    if (isInternalSeries(item.dataKey)) continue
     if (item.value === undefined) continue
     const value = typeof item.value === "number" && Number.isFinite(item.value) ? item.value : null
     if (value === null && nullText === undefined) continue
