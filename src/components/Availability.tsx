@@ -85,12 +85,19 @@ export function AvailabilityCard({ data, hours }: { data: Availability; hours: n
   // ⚠️ 时间轴固定看**最近一周** ✓、步长固定**一小时** ✓（168 格 ✓）——
   // 这本来就是它注释里写的意图（"covers a fixed week" ✓），只是代码此前跟着
   // **保留期**走 ✗ ⇒ 保留期设成 90 天时，格子会粗到一天一格、还要往回铺 90 天空格 ✗。
+
   const windowHours = Math.min(hours, 168)
-  const segments = segmentsFor(data, windowHours, 1)
+  // ⚠️ 步长**由这一周的窗口推**（不是写死 ✓）：`stepHours(168)` = **3 小时** ✓
+  // ⇒ 一格 = **180 分钟** ✓ —— 满 180 分钟为绿 ✓、缺任何一分钟为「部分异常 · 上报 N/180」✓
+  //（这套语义 `segmentTone`/`segmentText` 本来就有 ✓，我先前写死 1 小时把它盖掉了 ✓✗）。
+  // ⚠️ 关键是 `windowHours` 已经封顶一周 ✓ ⇒ 推出来的步长与保留期无关 ✓
+  //（保留期 90 天时原来是"一天一格 + 往回铺 90 天空格" ✓✗，现在不会了 ✓）。
+  const step = stepHours(windowHours)
+  const segments = segmentsFor(data, windowHours, step)
   // The width of one segment, in hours, for labelling it. Coarser than an hour
   // whenever the window is long enough that hourly strips would be unreadable:
   // a week is 3-hour segments, a month is 12-hour ones.
-  const step = stepHours(hours)
+
   // Only the measured buckets count towards the figure: the padded hours carry an
   // `m` of their own but nothing was expected of them, and dividing by them would
   // report a node added yesterday as broken.
