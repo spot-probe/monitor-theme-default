@@ -82,7 +82,11 @@ function Hover({ segment, step, left }: { segment: Segment; step: number; left: 
  */
 export function AvailabilityCard({ data, hours }: { data: Availability; hours: number }) {
   const { from, to, incidents } = data
-  const segments = segmentsFor(data, hours)
+  // ⚠️ 时间轴固定看**最近一周** ✓、步长固定**一小时** ✓（168 格 ✓）——
+  // 这本来就是它注释里写的意图（"covers a fixed week" ✓），只是代码此前跟着
+  // **保留期**走 ✗ ⇒ 保留期设成 90 天时，格子会粗到一天一格、还要往回铺 90 天空格 ✗。
+  const windowHours = Math.min(hours, 168)
+  const segments = segmentsFor(data, windowHours, 1)
   // The width of one segment, in hours, for labelling it. Coarser than an hour
   // whenever the window is long enough that hourly strips would be unreadable:
   // a week is 3-hour segments, a month is 12-hour ones.

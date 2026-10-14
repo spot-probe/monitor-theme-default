@@ -182,8 +182,7 @@ export function segmentText(s: Segment): string {
  * node's life and to what it retains, and this is what puts the clamped part back
  * so a node added a day ago does not look like it has been up for a week.
  */
-export function segmentsFor(data: Availability, hours: number): Segment[] {
-  const step = stepHours(hours)
+export function segmentsFor(data: Availability, hours: number, step = stepHours(hours)): Segment[] {
   const width = step * 3_600
   const measured: Segment[] = []
   for (const b of data.buckets) {
