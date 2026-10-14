@@ -272,18 +272,17 @@ function monthTicks(from: number, to: number, count: number): number[] {
  * while the four gridlines beneath it are not: a ceiling of 75% draws lines at
  * 18.75 and 56.25.
  *
- * ⚠️ 从前的 `base = 1024` 分支**删掉了** ✗：它只被速率图用 ✓，而速率图现在走
- * `rateAxis` 的对数轴 ✓（那段 1024 阶梯的取舍见 git 记录 ✓）。占用率只有一个底 ✓，
- * 所以这里只剩十进制 ✓。
+ * ⚠️ 从前的 `base = 1024` 分支**删掉了** ✗：它只被速率图用 ✓，而速率图现在走 `rateAxis`
+ * 的对数轴 ✓。占用率只有一个底 ✓，所以这里只剩十进制 ✓。
  *
  * `floor` keeps an idle machine looking idle: tracked exactly, a host that never
  * exceeds 0.4% CPU would get an axis of 0-0.4 and render every scheduler blip as
  * a peak.
  */
-export function axisTop(max: number, floor: number, base = 10, cap = Infinity): number {
+export function axisTop(max: number, floor: number, cap = Infinity): number {
   const target = Math.min(cap, Math.max(max, floor)) / 4
-  const scale = base ** Math.floor(Math.log(target) / Math.log(base))
-  const step = LADDER[base].map((m) => m * scale).find((n) => n >= target)
+  const scale = 10 ** Math.floor(Math.log10(target))
+  const step = LADDER.map((m) => m * scale).find((n) => n >= target)
   return Math.min(cap, (step ?? target) * 4)
 }
 
@@ -306,10 +305,7 @@ export function axisTop(max: number, floor: number, base = 10, cap = Infinity): 
  * 2-3 MB/s, within the range named above. The cost of dropping them is a top that
  * may overshoot the data by 2x rather than 1.5x.
  */
-const LADDER: Record<number, number[]> = {
-  10: [1, 1.5, 2, 2.5, 3, 4, 5, 7.5, 10],
-  1024: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024],
-}
+const LADDER = [1, 1.5, 2, 2.5, 3, 4, 5, 7.5, 10]
 
 /**
  * The gridlines for a zero-anchored axis: the top and the three quarters beneath

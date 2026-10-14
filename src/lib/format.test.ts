@@ -41,22 +41,12 @@ eq(axisBytes(0), "0 B", "零刻度")
 // axisTop: the top is derived from a round gridline, so quarters() lands on round
 // values in the unit the axis is printed in. Used for utilisation only -- a rate
 // spans orders of magnitude and goes through `rateAxis` below.
-eq(axisTop(0.4, 4, 10, 100), 4, "闲置机器拿到地板值")
-eq(axisTop(63, 4, 10, 100), 80, "63% -> 0/20/40/60/80")
-eq(axisTop(200, 4, 10, 100), 100, "百分比封顶")
-eq(quarters(axisTop(25_000_000, 1024, 1024, 25_000_001)).length, 5, "四条网格线，加 0")
-// 字节轴（1024 阶梯）当下的四条刻度断言：写入 `byte ladder` 时一并删掉 ✓。
-eq(quarters(axisTop(25_000_000, 1024, 1024)).map(axisBytes),
-   ["0 B", "8 MB", "16 MB", "24 MB", "32 MB"], "字节轴按 1024 取整")
-eq(quarters(axisTop(2_621_440, 1024, 1024)).map(axisBytes),
-   ["0 B", "1 MB", "2 MB", "3 MB", "4 MB"], "峰值 2.5 MB/s 的四条刻度")
-eq(quarters(axisTop(1_258_291, 1024, 1024)).map(axisBytes),
-   ["0 B", "512 KB", "1 MB", "1.5 MB", "2 MB"], "峰值 1.2 MB/s 的四条刻度")
-for (const max of [3_000, 300_000, 3_000_000, 300_000_000]) {
-  const top = axisTop(max, 1024, 1024)
-  eq(top > max, true, `${max} B/s 的轴顶不能等于数据本身`)
-  eq(top / max < 2, true, `${max} B/s 的轴顶不能浪费整块面板`)
-}
+eq(axisTop(0.4, 4, 100), 4, "闲置机器拿到地板值")
+eq(axisTop(63, 4, 100), 80, "63% -> 0/20/40/60/80")
+eq(axisTop(200, 4, 100), 100, "百分比封顶")
+// ⚠️ 字节轴那四条断言**随 1024 阶梯一起删掉了** ✓ —— 那条路已经不存在 ✗
+//（速率图换成 `rateAxis` 的对数轴 ✓，见下面的用例 ✓）。
+eq(quarters(axisTop(25_000_000, 4, 25_000_001)).length, 5, "四条网格线，加 0")
 
 // rateAxis: a logarithmic byte axis, each gridline a round label. The bottom is the
 // slowest rate drawn (never below 1 KB/s, since a log axis has no zero) and the top
