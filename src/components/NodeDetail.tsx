@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import { ArrowLeft, StickyNote } from "lucide-react"
 import {
   Area, AreaChart, Brush, CartesianGrid, ComposedChart, Line, ResponsiveContainer,
@@ -301,6 +301,17 @@ export function NodeDetail({ node, showPeak, onBack }: {
   const [zoom, setZoom] = useState<[number, number] | null>(null)
   // Where the chart begins on screen, so its height can occupy the remainder.
   const [chartTop, setChartTop] = useState(0)
+  // ⚠️⚠️ 这个 ref **必须是稳定引用** ✗✗ —— 原来是内联箭头 ✓ ⇒ React 每次渲染都会
+  // detach/attach ⇒ **每次都调它** ✓，而它 setState ⇒ 又一次渲染 ⇒ 又量一遍 ✓✗
+  //（那句"this callback runs on every render"的注释自己就写明了 ✓）。
+  // ⚠️ 而这条循环不是无害的 ✗：图高 = `100svh − chartTop` ✓ ⇒ 图高影响页面高度 ✓
+  // ⇒ 滚动条出现/消失 ⇒ **视口宽度变** ⇒ 上面的卡片换行 ⇒ chartTop 又变 ✓✗
+  // ⇒ 页面会在两种高度之间来回摆 ✓（这就是"像换了一页"的来源之一 ✓）。
+  // ⇒ 稳定引用 + 只在挂载时量一次 ✓（配合 index.css 里的 `scrollbar-gutter: stable`
+  //   把"滚动条改变宽度"这条反馈也断掉 ✓）。
+  const measureChartTop = useCallback((el: HTMLDivElement | null) => {
+    if (el) setChartTop(el.getBoundingClientRect().top + scrollY)
+  }, [])
   // The availability timeline, fetched apart from the charts below: it covers a
   // fixed week rather than the range picked above it, since the range selector is
   // for the charts and a timeline that changed width with it would be a different
@@ -666,9 +677,7 @@ export function NodeDetail({ node, showPeak, onBack }: {
             // viewport and this callback runs on every render; a live node
             // re-renders every two seconds, so a scrolled page would re-derive the
             // height from a top that has moved.
-            ref={(el) => {
-              if (el) setChartTop(el.getBoundingClientRect().top + scrollY)
-            }}
+            ref={measureChartTop}
             style={
               chartTop
                 ? { height: `calc(100svh - ${Math.round(chartTop)}px - 1rem)` }
