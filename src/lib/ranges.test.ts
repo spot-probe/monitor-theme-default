@@ -28,8 +28,15 @@ eq(rangesFor(7).map((r) => r.hours), [1, 6, 24, 168], "保留 7 天：到一周"
 eq(rangesFor(30).map((r) => r.hours), [1, 6, 24, 168, 720], "保留 30 天：多一个月")
 eq(rangesFor(90).map((r) => r.hours), [1, 6, 24, 168, 720, 2_160], "保留 90 天：多一个季度")
 eq(rangesFor(365).map((r) => r.hours), [1, 6, 24, 168, 720, 2_160, 8_760], "保留 365 天：多一年")
-eq(rangesFor(200).map((r) => r.hours), [1, 6, 24, 168, 720, 2_160], "200 天给到季度，不给一年")
+// ⭐ 保留期本身也是**一档** ✓：整档不够用的时候，不该让最长的历史看不到 ✓。
+eq(rangesFor(200).map((r) => r.hours), [1, 6, 24, 168, 720, 2_160, 4_800], "200 天：整档 + 保留期本身")
+// ⚠️ 而与某个整档差不到四分之一时，**不单列那个整档** ✓（并排两个等价的档位像重复 ✓）。
+eq(rangesFor(31).map((r) => r.hours), [1, 6, 24, 168, 744], "保留 31 天：不给「30 天」这一档")
+eq(rangesFor(92).map((r) => r.hours), [1, 6, 24, 168, 720, 2_208], "保留 92 天：不给「90 天」这一档")
 eq(rangesFor(90)[0].label, "1 小时", "档位带中文标签")
+// ⚠️ 一天那一档写「1 天」✗ 不是「24 小时」—— 一排档位都以天为单位 ✓
+eq(rangesFor(7).map((r) => r.label), ["1 小时", "6 小时", "1 天", "7 天"], "标签用天为单位")
+eq(rangesFor(365).at(-1)?.label, "1 年", "一年那一档写「1 年」")
 // What the latency chart does with them: it stops at a day, whatever the ladder holds.
 eq(rangesFor(90).filter((r) => r.hours <= 24).map((r) => r.hours), [1, 6, 24], "延迟那条只到一天")
 

@@ -19,14 +19,15 @@ export const MAX_DAYS = 365
 /** The ladder of windows, in hours: an hour, six, a day, a week, a month, a quarter, a year. */
 export const LADDER = [1, 6, 24, 168, 720, 2_160, 8_760] as const
 
-const LABELS: Record<number, string> = {
-  1: "1 小时",
-  6: "6 小时",
-  24: "24 小时",
-  168: "7 天",
-  720: "30 天",
-  2_160: "90 天",
-  8_760: "365 天",
+/**
+ * A window's label, in the unit the row is read in. The day rung says "1 天" rather
+ * than "24 小时": from there on the ladder counts days, and one rung phrased in hours
+ * beside the rest reads as a different kind of thing.
+ */
+function label(hours: number): string {
+  if (hours < 24) return `${hours} 小时`
+  if (hours === 8_760) return "1 年"
+  return `${hours / 24} 天`
 }
 
 /** What the hub says it keeps, in days: its `history_days`, or the fallback. */
@@ -40,8 +41,19 @@ export function historyDays(config: unknown): number {
   return Math.min(Math.floor(days), MAX_DAYS)
 }
 
-/** The windows to offer: every rung up to what the hub keeps, and never past it. */
+/**
+ * The windows to offer: every round rung within what the hub keeps, plus the whole of
+ * it.
+ *
+ * The whole of it is a rung of its own, or a hub keeping 92 days could not reach past
+ * 90 at all -- the widest window it holds is the one an operator goes looking for. A
+ * round rung the whole exceeds by less than a quarter is left out instead: a 31-day
+ * hub beside a 30-day tab reads as a duplicate, and the whole already covers it.
+ */
 export function rangesFor(days: number): { hours: number; label: string }[] {
-  const hours = historyDays({ history_days: days }) * 24
-  return LADDER.filter((h) => h <= hours).map((h) => ({ hours: h, label: LABELS[h] }))
+  const whole = historyDays({ history_days: days }) * 24
+  return [...LADDER.filter((h) => h * 1.25 <= whole), whole].map((hours) => ({
+    hours,
+    label: label(hours),
+  }))
 }
