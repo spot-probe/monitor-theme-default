@@ -81,6 +81,7 @@ export function ChartTooltip({
   formats,
   hint,
   nullText,
+  pick,
 }: {
   active?: boolean
   payload?: PayloadItem[]
@@ -102,6 +103,12 @@ export function ChartTooltip({
    * the whole tooltip (`TooltipBoundingBox` shows itself on `hasPayload`).
    */
   nullText?: string
+  /**
+   * The reading to print, when the value that was **drawn** is not the one to show: a
+   * rate is lifted to its log axis's floor before it is plotted, and what a reader
+   * wants there is the hub's own figure. Absent ⇒ the drawn value, as everywhere.
+   */
+  pick?: (item: PayloadItem) => number | null | undefined
 }) {
   if (!active || !payload?.length) return null
   const rows: Row[] = []
@@ -113,7 +120,12 @@ export function ChartTooltip({
     // recharts 不遵守，线上因此漏出过一行 `b6`。判定与理由见 `isInternalSeries`。
     if (isInternalSeries(item.dataKey)) continue
     if (item.value === undefined) continue
-    const value = typeof item.value === "number" && Number.isFinite(item.value) ? item.value : null
+    const raw = pick?.(item)
+    const value = typeof raw === "number" && Number.isFinite(raw)
+      ? raw
+      : typeof item.value === "number" && Number.isFinite(item.value)
+        ? item.value
+        : null
     if (value === null && nullText === undefined) continue
     const series = formats?.[String(item.dataKey)] ?? format
     rows.push({
@@ -156,6 +168,7 @@ export function Crosshair({
   points,
   payload,
   domainTop,
+  domainBottom = 0,
   format,
   top = 0,
   left = 0,
@@ -167,6 +180,8 @@ export function Crosshair({
   points?: CursorPoint[]
   payload?: PayloadItem[]
   domainTop?: number
+  /** 对数轴的底 ✓（0 ⇒ 线性 ✓）。速率图非 0 ⇒ 高度按对数比例分 ✓。 */
+  domainBottom?: number
   format?: (value: number) => string
   top?: number
   left?: number
@@ -179,7 +194,8 @@ export function Crosshair({
   if (x === undefined) return null
   const series = payload?.[0]
   const value = typeof series?.value === "number" ? series.value : null
-  const y = value === null || domainTop === undefined ? null : crosshairY(value, domainTop, height)
+  const y =
+    value === null || domainTop === undefined ? null : crosshairY(value, domainTop, height, domainBottom)
   const text = y === null || value === null || !format ? "" : format(value)
   const chip = chipWidth(text)
   // Kept inside the plot: a line at the top of the axis would otherwise print its

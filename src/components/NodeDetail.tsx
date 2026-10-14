@@ -17,6 +17,7 @@ import { api, useHistoryDays, type Node } from "@/lib/api"
 import { rangesFor } from "@/lib/ranges"
 import {
   axisBytes, axisTop, bytes, clockFor, despike, quarters, cpuName, cycle, FOREVER, money, osName, rate,
+  rateAxis, RATE_FLOOR,
   stamp, tickClock, timeTicks,
 } from "@/lib/format"
 import type { Availability } from "@/lib/uptime"
@@ -83,6 +84,10 @@ const AXIS = { stroke: "currentColor", fontSize: 11, tickLine: false, axisLine: 
 // chart across seven hundred points per probe.
 const SERIES = { dot: false as const, strokeWidth: 1.5, isAnimationActive: false }
 
+// ⚠️ 速率图是**对数**轴 ✓，而它没有 0 ✗ ⇒ 低于地板的读数要**抬到地板上再画** ✓
+//（不是改数据 ✓：提示框仍旧读 hub 给的原值 ✓，见速率面板里的 `pick` ✓）。
+const lift = (v: number) => Math.max(v, RATE_FLOOR)
+
 // Recharts eases its tooltip after the pointer over 400ms. Left on, the box lags
 // behind the crosshair by most of a second on a fast drag, so the two read as two
 // different readings of the same instant; the crosshair is what says where the
@@ -92,12 +97,16 @@ const WRAPPER = { transition: "none" }
 // One width for every stacked panel's value axis. Sized to their own labels --
 // 40px under "100%", 68px under "172 MB" -- the four plot areas would be offset by
 // 28px, placing a CPU spike and the network spike that caused it at different x.
-const Y_WIDTH = 68
+const VALUE_AXIS = { ...AXIS, width: 68, interval: 0 }
 
 // The CPU panel is the only one with a second axis, and that axis costs the plot
 // width it stands on. The other three reserve the same width as a right margin, so
 // all four plots keep one x range and a CPU spike stays in the same column as the
-// network spike that caused it -- which is the whole reason `Y_WIDTH` is a single
+// network spike that caused it -- which is the whole reason the width is a single
+//
+// ⚠️ `interval: 0` 是**必须的** ✗：列出的刻度要**全部画出来** ✓，而 recharts 自己的碰撞
+// 处理会把顶端标签内推 5px、顺手藏掉它下面那个刻度 ✓，网格线还另外再算一遍 ✓✗
+//（CPU 轴会因此少一条 30% 的网格线 ✓；速率轴少掉 10 MB/s 那个标签和两条网格线 ✓）。
 // number rather than one per panel.
 const LOAD_AXIS = 36
 
@@ -366,8 +375,10 @@ export function NodeDetail({ node, showPeak, onBack }: {
       (data?.metrics ?? []).map((m) => ({
         ...m,
         ts: m.ts * 1_000,
-        rx_band: [m.net_rx, showPeak ? (m.net_rx_max ?? m.net_rx) : m.net_rx],
-        tx_band: [m.net_tx, showPeak ? (m.net_tx_max ?? m.net_tx) : m.net_tx],
+        rx: lift(m.net_rx),
+        tx: lift(m.net_tx),
+        rx_band: [lift(m.net_rx), showPeak ? lift(m.net_rx_max ?? m.net_rx) : lift(m.net_rx)],
+        tx_band: [lift(m.net_tx), showPeak ? lift(m.net_tx_max ?? m.net_tx) : lift(m.net_tx)],
       })),
     [data, showPeak],
   )
@@ -385,21 +396,26 @@ export function NodeDetail({ node, showPeak, onBack }: {
   // transfer rate do not express fullness: against a fixed 0-100, a machine
   // sitting at 0.4% draws as a line along the panel's floor. Memory and disk keep
   // their totals as tops, where fullness is the entire question.
-  const tops = useMemo(() => {
+  const axes = useMemo(() => {
     const max = (pick: (m: (typeof metricRows)[number]) => number) =>
       metricRows.reduce((hi, m) => Math.max(hi, pick(m)), 0)
+    // A floor of 4%, or a machine that never exceeds 0.4% would get an axis of
+    // 0-0.4 and render every scheduler blip as a peak. Capped at 100.
+    const cpu = axisTop(max((m) => m.cpu), 4, 100)
+    // A load average has no capacity to be a fraction of, so it climbs a ladder
+    // too -- but its floor is a quarter rather than the CPU's 4%: these are
+    // counts, not percentages, and 0.25 is where a quiet single-core box sits.
+    // Absolute load rather than load per core, as the panel's own reading.
+    const load = axisTop(max((m) => m.load1 ?? 0), 0.25)
     return {
-      // A floor of 4%, or a machine that never exceeds 0.4% would get an axis of
-      // 0-0.4 and render every scheduler blip as a peak. Capped at 100.
-      cpu: axisTop(max((m) => m.cpu), 4, 10, 100),
-      // Base 1024, so the steps are round in the unit `axisBytes` prints. Fitted
-      // to the band rather than the line, or the peaks would run off the top.
-      rate: axisTop(max((m) => Math.max(m.rx_band[1], m.tx_band[1])), 1024, 1024),
-      // A load average has no capacity to be a fraction of, so it climbs a ladder
-      // too -- but its floor is a quarter rather than the CPU's 4%: these are
-      // counts, not percentages, and 0.25 is where a quiet single-core box sits.
-      // Absolute load rather than load per core, as the panel's own reading.
-      load: axisTop(max((m) => m.load1 ?? 0), 0.25, 10),
+      cpu: { domain: [0, cpu] as [number, number], ticks: quarters(cpu) },
+      load: { domain: [0, load] as [number, number], ticks: quarters(load) },
+      // ⚠️ 速率**不走**刻度阶梯 ✓：它跨好几个数量级 ⇒ 交给对数轴 ✓，
+      // 底取"画出来的最慢速率"、顶取"最高的峰值" ✓ ⇒ 那条带不会跑出面板 ✓。
+      rate: rateAxis(
+        metricRows.reduce((lo, m) => Math.min(lo, m.rx, m.tx), Infinity),
+        max((m) => Math.max(m.rx_band[1], m.tx_band[1])),
+      ),
     }
   }, [metricRows])
 
@@ -818,18 +834,16 @@ export function NodeDetail({ node, showPeak, onBack }: {
                 <XAxis {...timeAxis(metricRows)} />
                 <YAxis
                   yAxisId="cpu"
-                  domain={[0, tops.cpu]}
-                  ticks={quarters(tops.cpu)}
+                  {...axes.cpu}
                   unit="%"
-                  width={Y_WIDTH}
+                  {...VALUE_AXIS}
                   {...AXIS}
                 />
                 {hasLoad && (
                   <YAxis
                     yAxisId="load"
                     orientation="right"
-                    domain={[0, tops.load]}
-                    ticks={quarters(tops.load)}
+                    {...axes.load}
                     tickFormatter={loadTick}
                     width={LOAD_AXIS}
                     {...AXIS}
@@ -842,7 +856,7 @@ export function NodeDetail({ node, showPeak, onBack }: {
                   content={<ChartTooltip format={pct} formats={{ load1: load }} />}
                   // The horizontal line follows the CPU, which is what the panel is
                   // named for, and the chip carries the percentage with it.
-                  cursor={<Crosshair domainTop={tops.cpu} format={pct} />}
+                  cursor={<Crosshair domainTop={axes.cpu.domain[1]} format={pct} />}
                 />
                 <Wash id="cpu-wash" color="var(--color-chart-1)" />
                 <Area yAxisId="cpu" dataKey="cpu" name="CPU" stroke="var(--color-chart-1)" fill="url(#cpu-wash)" {...SERIES} />
@@ -893,7 +907,7 @@ export function NodeDetail({ node, showPeak, onBack }: {
               <ComposedChart data={metricRows} margin={{ right: hasLoad ? LOAD_AXIS : 0 }}>
                 <CartesianGrid strokeDasharray="3 3" className="stroke-muted" vertical={false} />
                 <XAxis {...timeAxis(metricRows)} />
-                <YAxis domain={[0, memTop]} ticks={quarters(memTop)} tickFormatter={axisBytes} width={Y_WIDTH} {...AXIS} />
+                <YAxis domain={[0, memTop]} ticks={quarters(memTop)} tickFormatter={axisBytes} {...VALUE_AXIS} {...AXIS} />
                 <Tooltip
                   wrapperStyle={WRAPPER}
                   content={<ChartTooltip format={bytes} />}
@@ -934,7 +948,7 @@ export function NodeDetail({ node, showPeak, onBack }: {
               <ComposedChart data={metricRows} margin={{ right: hasLoad ? LOAD_AXIS : 0 }}>
                 <CartesianGrid strokeDasharray="3 3" className="stroke-muted" vertical={false} />
                 <XAxis {...timeAxis(metricRows)} />
-                <YAxis domain={[0, tops.rate]} ticks={quarters(tops.rate)} tickFormatter={axisBytes} unit="/s" width={Y_WIDTH} {...AXIS} />
+                <YAxis scale="log" {...axes.rate} tickFormatter={axisBytes} unit="/s" {...VALUE_AXIS} {...AXIS} />
                 <Tooltip
                   wrapperStyle={WRAPPER}
                   content={
@@ -942,13 +956,14 @@ export function NodeDetail({ node, showPeak, onBack }: {
                     // （老 hub）时只报均值，与这些设置都不存在时一样。
                     <ChartTooltip
                       format={rate}
+                      pick={(item) => item.payload?.[`net_${String(item.dataKey)}`] as number | undefined}
                       hint={(item) => {
                         const max = item.payload?.[item.dataKey === "net_rx" ? "net_rx_max" : "net_tx_max"]
                         return peak && typeof max === "number" ? `本段峰值 ${rate(max)}` : undefined
                       }}
                     />
                   }
-                  cursor={<Crosshair domainTop={tops.rate} format={rate} />}
+                  cursor={<Crosshair domainTop={axes.rate.domain[1]} domainBottom={axes.rate.domain[0]} format={rate} />}
                 />
                 {/* 均值到峰值那条带。一分钟的突发在一天的轴上不到一像素宽，只填色
                     看不见，所以上沿描一道虚线；虚线而不是淡边，是因为两条速率靠色
@@ -981,8 +996,8 @@ export function NodeDetail({ node, showPeak, onBack }: {
                 )}
                 {/* Two lines, so two hues -- and the same pair the summary's
                     sparkline uses for the same two directions. */}
-                <Line dataKey="net_rx" name="下行" stroke="var(--color-chart-1)" {...SERIES} />
-                <Line dataKey="net_tx" name="上行" stroke="var(--color-chart-4)" {...SERIES} />
+                <Line dataKey="rx" name="下行" stroke="var(--color-chart-1)" {...SERIES} />
+                <Line dataKey="tx" name="上行" stroke="var(--color-chart-4)" {...SERIES} />
               </ComposedChart>
             </ResponsiveContainer>
           </Panel>
@@ -1008,7 +1023,7 @@ export function NodeDetail({ node, showPeak, onBack }: {
               <AreaChart data={metricRows} margin={{ right: hasLoad ? LOAD_AXIS : 0 }}>
                 <CartesianGrid strokeDasharray="3 3" className="stroke-muted" vertical={false} />
                 <XAxis {...timeAxis(metricRows)} />
-                <YAxis domain={[0, node.disk_total]} ticks={quarters(node.disk_total)} tickFormatter={axisBytes} width={Y_WIDTH} {...AXIS} />
+                <YAxis domain={[0, node.disk_total]} ticks={quarters(node.disk_total)} tickFormatter={axisBytes} {...VALUE_AXIS} {...AXIS} />
                 <Tooltip
                   wrapperStyle={WRAPPER}
                   content={<ChartTooltip format={bytes} />}
