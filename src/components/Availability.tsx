@@ -204,7 +204,7 @@ export function AvailabilityCard({ data, hours }: { data: Availability; hours: n
           `${faults}。用左右方向键逐段查看`}
         // ⚠️ 这里**不再固定高度** ✗：格子改成长宽比 3:5 ✓ ⇒ 高度由宽度算出 ✓
         //（`h-6` 会把它压扁、比也就没了 ✓）。
-        className="relative mt-3 flex items-start gap-px"
+        className="relative mt-3 flex items-start gap-0.5"
         onMouseLeave={() => setActive(null)}
         onBlur={(e) => {
           if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setActive(null)
@@ -225,9 +225,9 @@ export function AvailabilityCard({ data, hours }: { data: Availability; hours: n
             className={cn(
               // ⚠️ 每一格都是**独立的 3:5 圆角矩形** ✓（与探测点阵同一套语汇 ✓：
               // 那里是 `h-[15px] w-[9px] rounded-[3px]` ✓）。
-              // 宽度由 flex 平分 ✓，高度由 `aspect-[3/5]` 跟着算 ✓
+              // 宽度由 flex 平分 ✓，高度由 `aspect-[4/5]` 跟着算 ✓
               // ⇒ 不再是"一整条长条只在首尾圆角" ✗（那样看不出格子 ✓）。
-              "aspect-[4/5] min-w-px flex-1 rounded-[5px] outline-offset-1 " +
+              "aspect-[4/5] min-w-px flex-1 rounded-[8px] outline-offset-1 " +
                 "focus-visible:outline-2 focus-visible:outline-ring",
               TONE_CLASS[segmentTone(s)],
               i === active && "ring-1 ring-ring ring-inset",
