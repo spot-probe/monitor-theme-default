@@ -4,7 +4,8 @@
 //
 // Nothing imports it, so the bundle never includes it.
 import {
-  axisBytes, axisTop, bytes, cpuName, cycle, daysUntil, despike, money, osName, pair, quarters, timeTicks, uptime,
+  axisBytes, axisTop, bytes, cpuName, cycle, daysUntil, despike, money, osName, pair, quarters, tickClock,
+  timeTicks, uptime,
 } from "./format.ts"
 
 let failed = 0
@@ -144,6 +145,34 @@ eq(
   ],
   "货币显示",
 )
+
+// Past two weeks the ticks land on the first of a month: months differ in length, so
+// no fixed step can land on one. They are still local midnights, and the label drops
+// the time once every tick is one -- "00:00" beside each says nothing.
+{
+  const day = 86_400_000
+  const from = new Date(2026, 0, 15).getTime()
+  const year = timeTicks(from, from + 365 * day)
+  eq(year.length >= 4 && year.length <= 8, true, "一年的窗口给 4–8 个刻度")
+  eq(year.every((t) => new Date(t).getDate() === 1), true, "月刻度每一格都是 1 号")
+  eq(year.every((t) => new Date(t).getHours() === 0), true, "月刻度落在本地零点")
+  eq(tickClock(year, 8_760)(year[0]).includes(":"), false, "刻度全是零点时只写日期")
+  const six = timeTicks(from, from + 6 * 3_600_000)
+  eq(six.length, 7, "六小时窗口给 7 个刻度")
+  eq(tickClock(six, 6)(six[0]).includes(":"), true, "有非零点时写回时刻")
+  eq(tickClock([], 6)(from).includes(":"), true, "一个刻度都没有时退回窗口自己的格式")
+}
+
+// ⚠️ 夏令时：日尺度刻度跨过切换点会漂一小时 ✗（相位对齐治不了这个 ✓ —— 实测在
+// America/New_York 下切换后的四个刻度会落在 01:00 ✗）。断言写成"落点是本地零点" ✓，
+// 在任何时区都成立 ✓，而在有夏令时的时区里才有牙齿 ✓。
+{
+  const day = 86_400_000
+  const before = new Date(2026, 2, 5).getTime()
+  const daily = timeTicks(before, before + 7 * day, 7)
+  eq(daily.length, 8, "七天窗口给 8 个日刻度")
+  eq(daily.every((t) => new Date(t).getHours() === 0), true, "跨夏令时的日刻度仍落在本地零点")
+}
 
 if (failed) {
   console.error(`\n${failed} 项不通过`)

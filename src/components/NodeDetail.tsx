@@ -17,7 +17,7 @@ import { api, useHistoryDays, type Node } from "@/lib/api"
 import { rangesFor } from "@/lib/ranges"
 import {
   axisBytes, axisTop, bytes, clockFor, despike, quarters, cpuName, cycle, FOREVER, money, osName, rate,
-  stamp, timeTicks,
+  stamp, tickClock, timeTicks,
 } from "@/lib/format"
 import type { Availability } from "@/lib/uptime"
 
@@ -486,17 +486,23 @@ export function NodeDetail({ node, showPeak, onBack }: {
   // A real time axis rather than the category axis recharts defaults to: on a
   // category axis ticks are selected by index, so a period the agent was offline
   // for collapses to nothing.
-  const timeAxis = (rows: { ts: number }[], from = 0, to = rows.length - 1) => ({
-    dataKey: "ts",
-    type: "number" as const,
-    domain: ["dataMin", "dataMax"] as const,
+  const timeAxis = (rows: { ts: number }[], from = 0, to = rows.length - 1) => {
     // Explicit, or recharts places them at 05:14 and 10:22. Any that still collide
     // are dropped by `minTickGap`.
-    ticks: rows.length ? timeTicks(rows[from].ts, rows[to].ts) : undefined,
-    tickFormatter: clockFor(hours),
-    minTickGap: hours > 24 ? 72 : 40,
-    ...AXIS,
-  })
+    const ticks = rows.length ? timeTicks(rows[from].ts, rows[to].ts) : []
+    return {
+      dataKey: "ts",
+      type: "number" as const,
+      domain: ["dataMin", "dataMax"] as const,
+      ticks,
+      // Handed the ticks rather than the window: a year drawn on the first of each
+      // month writes the date alone, while the same window brushed down to a day
+      // gets its times back -- the window did not change, the ticks did.
+      tickFormatter: tickClock(ticks, hours),
+      minTickGap: hours > 24 ? 72 : 40,
+      ...AXIS,
+    }
+  }
 
   return (
     <div className="space-y-4">
