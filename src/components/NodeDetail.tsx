@@ -396,6 +396,9 @@ export function NodeDetail({ node, showPeak, onBack }: {
   // transfer rate do not express fullness: against a fixed 0-100, a machine
   // sitting at 0.4% draws as a line along the panel's floor. Memory and disk keep
   // their totals as tops, where fullness is the entire question.
+  // ⚠️ 四条值轴用 `VALUE_AXIS`（`interval: 0`）之后，**顶端那格标签是压在轴顶上的** ✗
+  // ⇒ 没有上边距就会被容器裁掉半行 ✓✗（截图里「10 MB/s」「40 GB」都缺了上半 ✓）。
+  // 8px 是它需要的最小值 ✓：11px 的字居中在轴顶，上半约 5.5px ＋ 一点余量 ✓。
   const axes = useMemo(() => {
     const max = (pick: (m: (typeof metricRows)[number]) => number) =>
       metricRows.reduce((hi, m) => Math.max(hi, pick(m)), 0)
@@ -829,7 +832,7 @@ export function NodeDetail({ node, showPeak, onBack }: {
                   cannot share one scale. No right margin here: the axis below
                   stands in that space, and the panels without one reserve it as a
                   margin so the four plots keep the same x range. */}
-              <ComposedChart data={metricRows} margin={{ right: 0 }}>
+              <ComposedChart data={metricRows} margin={{ top: 8, right: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" className="stroke-muted" vertical={false} />
                 <XAxis {...timeAxis(metricRows)} />
                 <YAxis
@@ -904,7 +907,7 @@ export function NodeDetail({ node, showPeak, onBack }: {
               {/* Composed rather than an area chart, since swap is a second line
                   on the same axis. A hub without the field sends none of it and
                   only the area is drawn. */}
-              <ComposedChart data={metricRows} margin={{ right: hasLoad ? LOAD_AXIS : 0 }}>
+              <ComposedChart data={metricRows} margin={{ top: 8, right: hasLoad ? LOAD_AXIS : 0 }}>
                 <CartesianGrid strokeDasharray="3 3" className="stroke-muted" vertical={false} />
                 <XAxis {...timeAxis(metricRows)} />
                 <YAxis domain={[0, memTop]} ticks={quarters(memTop)} tickFormatter={axisBytes} {...VALUE_AXIS} {...AXIS} />
@@ -945,7 +948,7 @@ export function NodeDetail({ node, showPeak, onBack }: {
             }
           >
             <ResponsiveContainer>
-              <ComposedChart data={metricRows} margin={{ right: hasLoad ? LOAD_AXIS : 0 }}>
+              <ComposedChart data={metricRows} margin={{ top: 8, right: hasLoad ? LOAD_AXIS : 0 }}>
                 <CartesianGrid strokeDasharray="3 3" className="stroke-muted" vertical={false} />
                 <XAxis {...timeAxis(metricRows)} />
                 <YAxis scale="log" {...axes.rate} tickFormatter={axisBytes} unit="/s" {...VALUE_AXIS} {...AXIS} />
@@ -1020,7 +1023,7 @@ export function NodeDetail({ node, showPeak, onBack }: {
             }
           >
             <ResponsiveContainer>
-              <AreaChart data={metricRows} margin={{ right: hasLoad ? LOAD_AXIS : 0 }}>
+              <AreaChart data={metricRows} margin={{ top: 8, right: hasLoad ? LOAD_AXIS : 0 }}>
                 <CartesianGrid strokeDasharray="3 3" className="stroke-muted" vertical={false} />
                 <XAxis {...timeAxis(metricRows)} />
                 <YAxis domain={[0, node.disk_total]} ticks={quarters(node.disk_total)} tickFormatter={axisBytes} {...VALUE_AXIS} {...AXIS} />
