@@ -227,7 +227,7 @@ export function AvailabilityCard({ data, hours }: { data: Availability; hours: n
               // 那里是 `h-[15px] w-[9px] rounded-[3px]` ✓）。
               // 宽度由 flex 平分 ✓，高度由 `aspect-[3/5]` 跟着算 ✓
               // ⇒ 不再是"一整条长条只在首尾圆角" ✗（那样看不出格子 ✓）。
-              "aspect-[3/5] min-w-px flex-1 rounded-[3px] outline-offset-1 " +
+              "aspect-[4/5] min-w-px flex-1 rounded-[5px] outline-offset-1 " +
                 "focus-visible:outline-2 focus-visible:outline-ring",
               TONE_CLASS[segmentTone(s)],
               i === active && "ring-1 ring-ring ring-inset",
