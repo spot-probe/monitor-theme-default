@@ -661,7 +661,29 @@ export function NodeDetail({ node, showPeak, onBack }: {
       </div>
 
       {!data ? (
-        <Skeleton className="h-40 w-full" />
+        // ⚠️⚠️ **占位必须占同样的高度** ✗✗ —— 原来是一个 160px 的 Skeleton ✓，
+        // 而资源页加载完是**四张** panel（每张 ≈220px ＋ 间距 ✓）⇒ 数据一到页面
+        // **一次长高约 780px** ✗ ⇒ 浏览器为了"保持可见内容不动"会按锚点**调整滚动位置**
+        //（scroll anchoring ✓）⇒ 你被挪到别的位置 ⇒ 观感就是"切档位像换了一页" ✓✓。
+        // ⇒ 照各自加载完的样子摆位 ✓：资源页四张 ✓、延迟页那**一个**高度 ✓。
+        tab === "latency" ? (
+          <div
+            className="min-h-72"
+            style={
+              chartTop
+                ? { height: `calc(100svh - ${Math.round(chartTop)}px - 1rem)` }
+                : undefined
+            }
+          >
+            <Skeleton className="h-full w-full" />
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {[0, 1, 2, 3].map((i) => (
+              <Skeleton key={i} className="h-56 w-full rounded-xl" />
+            ))}
+          </div>
+        )
       ) : failed ? (
         <p className="py-8 text-center text-sm text-destructive" role="alert">读取历史数据失败：{failed}</p>
       ) : tab === "latency" ? (
