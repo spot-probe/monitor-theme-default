@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react"
 import { ArrowLeft, StickyNote } from "lucide-react"
 import {
   Area, AreaChart, Brush, CartesianGrid, ComposedChart, Line, ResponsiveContainer,
-  Tooltip, XAxis, YAxis,
+  Tooltip, XAxis, YAxis, type DotItemDotProps,
 } from "recharts"
 
 import { Badge } from "@/components/ui/badge"
@@ -84,6 +84,18 @@ const AXIS = { stroke: "currentColor", fontSize: 11, tickLine: false, axisLine: 
 // chart across seven hundred points per probe.
 const SERIES = { dot: false as const, strokeWidth: 1.5, isAnimationActive: false }
 
+// ⚠️ 资源图的系列用这个 ✓：两侧都是空档的那**一个**点，没有任何邻居可以连线 ✓
+// ⇒ `dot: false` 会让它**完全不显示** ✗（一台掉线一段、只回来报了一个桶的机器 ✓
+// 在图上会像"什么都没发生" ✓）。命中这种点时画一个 2px 的圆 ✓。
+// ⚠️ 用 recharts 交进来的 `points`（这个系列自己的 y 值 ✓）判邻，不必闭包取数据 ✓。
+const RESOURCE_SERIES = {
+  ...SERIES,
+  dot: ({ cx, cy, index, points, stroke }: DotItemDotProps) =>
+    cy == null || points[index - 1]?.y != null || points[index + 1]?.y != null ? null : (
+      <circle cx={cx} cy={cy} r={2} fill={stroke} />
+    ),
+}
+
 // ⚠️ 速率图是**对数**轴 ✓，而它没有 0 ✗ ⇒ 低于地板的读数要**抬到地板上再画** ✓
 //（不是改数据 ✓：提示框仍旧读 hub 给的原值 ✓，见速率面板里的 `pick` ✓）。
 const lift = (v: number) => Math.max(v, RATE_FLOOR)
@@ -93,6 +105,12 @@ const lift = (v: number) => Math.max(v, RATE_FLOOR)
 // different readings of the same instant; the crosshair is what says where the
 // pointer is, and it is exact.
 const WRAPPER = { transition: "none" }
+
+// ⚠️ 而**容器不滑** ≠ **提示框不滑** ✗ —— 上面那个只管外层容器的过渡 ✓，
+// 下面这个管的是 recharts 自己的入场动画 ✓：从图表右侧移入时，提示框会先出现在
+// 光标右侧、再用 **400ms** 滑回图内 ✓，滑动期间最多**超出页面 140px** ✓，
+// 足以闪出一条横向滚动条 ✓✗ ⇒ 直接关掉 ✓（上游那两笔的实测数字 ✓）。
+const TOOLTIP = { isAnimationActive: false }
 
 // One width for every stacked panel's value axis. Sized to their own labels --
 // 40px under "100%", 68px under "172 MB" -- the four plot areas would be offset by
@@ -610,7 +628,9 @@ export function NodeDetail({ node, showPeak, onBack }: {
           onChange={setTab}
           items={TABS.map((t) => ({ value: t.key, label: t.label }))}
         />
+        {/* ⚠️ `narrow` 只给这一排 ✓：保留期一年时它有 7 段 ✓，窄屏上要能排成一行 ✓。 */}
         <Segmented
+          narrow
           label="时间范围"
           value={hours}
           onChange={(next) => setRanges((all) => ({ ...all, [tab]: next }))}
@@ -683,7 +703,7 @@ export function NodeDetail({ node, showPeak, onBack }: {
                         far from it, and zero flattens every wobble. */}
                     <YAxis unit="ms" width={52} domain={["auto", "auto"]} {...AXIS} />
                     <Tooltip
-                      wrapperStyle={WRAPPER}
+                      wrapperStyle={WRAPPER} {...TOOLTIP}
                       // recharts drops every entry with no value before the content
                       // sees it, and hides the tooltip outright once nothing is
                       // left -- so a bucket that all three probes timed out in
@@ -853,7 +873,7 @@ export function NodeDetail({ node, showPeak, onBack }: {
                   />
                 )}
                 <Tooltip
-                  wrapperStyle={WRAPPER}
+                  wrapperStyle={WRAPPER} {...TOOLTIP}
                   // The load row is the one series on this page measured in
                   // something other than the panel's own unit.
                   content={<ChartTooltip format={pct} formats={{ load1: load }} />}
@@ -862,7 +882,7 @@ export function NodeDetail({ node, showPeak, onBack }: {
                   cursor={<Crosshair domainTop={axes.cpu.domain[1]} format={pct} />}
                 />
                 <Wash id="cpu-wash" color="var(--color-chart-1)" />
-                <Area yAxisId="cpu" dataKey="cpu" name="CPU" stroke="var(--color-chart-1)" fill="url(#cpu-wash)" {...SERIES} />
+                <Area yAxisId="cpu" dataKey="cpu" name="CPU" stroke="var(--color-chart-1)" fill="url(#cpu-wash)" {...RESOURCE_SERIES} />
                 {hasLoad && (
                   // Bridged across a bucket the hub had no load for: before this
                   // field existed every row is null, and a line broken at every
@@ -912,12 +932,12 @@ export function NodeDetail({ node, showPeak, onBack }: {
                 <XAxis {...timeAxis(metricRows)} />
                 <YAxis domain={[0, memTop]} ticks={quarters(memTop)} tickFormatter={axisBytes} {...VALUE_AXIS} {...AXIS} />
                 <Tooltip
-                  wrapperStyle={WRAPPER}
+                  wrapperStyle={WRAPPER} {...TOOLTIP}
                   content={<ChartTooltip format={bytes} />}
                   cursor={<Crosshair domainTop={memTop} format={bytes} />}
                 />
                 <Wash id="mem-wash" color="var(--color-chart-1)" />
-                <Area dataKey="mem_used" name="内存" stroke="var(--color-chart-1)" fill="url(#mem-wash)" {...SERIES} />
+                <Area dataKey="mem_used" name="内存" stroke="var(--color-chart-1)" fill="url(#mem-wash)" {...RESOURCE_SERIES} />
                 {hasSwap && (
                   <Line dataKey="swap_used" name="Swap" stroke="var(--color-chart-4)" {...SERIES} />
                 )}
@@ -953,7 +973,7 @@ export function NodeDetail({ node, showPeak, onBack }: {
                 <XAxis {...timeAxis(metricRows)} />
                 <YAxis scale="log" {...axes.rate} tickFormatter={axisBytes} unit="/s" {...VALUE_AXIS} {...AXIS} />
                 <Tooltip
-                  wrapperStyle={WRAPPER}
+                  wrapperStyle={WRAPPER} {...TOOLTIP}
                   content={
                     // 均值和峰值并排，因为这条线画的正是均值；行里没有峰值字段
                     // （老 hub）时只报均值，与这些设置都不存在时一样。
@@ -999,8 +1019,8 @@ export function NodeDetail({ node, showPeak, onBack }: {
                 )}
                 {/* Two lines, so two hues -- and the same pair the summary's
                     sparkline uses for the same two directions. */}
-                <Line dataKey="rx" name="下行" stroke="var(--color-chart-1)" {...SERIES} />
-                <Line dataKey="tx" name="上行" stroke="var(--color-chart-4)" {...SERIES} />
+                <Line dataKey="rx" name="下行" stroke="var(--color-chart-1)" {...RESOURCE_SERIES} />
+                <Line dataKey="tx" name="上行" stroke="var(--color-chart-4)" {...RESOURCE_SERIES} />
               </ComposedChart>
             </ResponsiveContainer>
           </Panel>
@@ -1028,12 +1048,12 @@ export function NodeDetail({ node, showPeak, onBack }: {
                 <XAxis {...timeAxis(metricRows)} />
                 <YAxis domain={[0, node.disk_total]} ticks={quarters(node.disk_total)} tickFormatter={axisBytes} {...VALUE_AXIS} {...AXIS} />
                 <Tooltip
-                  wrapperStyle={WRAPPER}
+                  wrapperStyle={WRAPPER} {...TOOLTIP}
                   content={<ChartTooltip format={bytes} />}
                   cursor={<Crosshair domainTop={node.disk_total} format={bytes} />}
                 />
                 <Wash id="disk-wash" color="var(--color-chart-1)" />
-                <Area dataKey="disk_used" name="硬盘" stroke="var(--color-chart-1)" fill="url(#disk-wash)" {...SERIES} />
+                <Area dataKey="disk_used" name="硬盘" stroke="var(--color-chart-1)" fill="url(#disk-wash)" {...RESOURCE_SERIES} />
               </AreaChart>
             </ResponsiveContainer>
           </Panel>

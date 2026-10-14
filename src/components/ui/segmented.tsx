@@ -18,12 +18,19 @@ export type Segment<T extends string | number> = {
  * them two controls instead of one confusing set. The list page's view switch is
  * the same object with icons instead of words.
  */
-export function Segmented<T extends string | number>({ items, value, onChange, label, className }: {
+export function Segmented<T extends string | number>({ items, value, onChange, label, className, narrow }: {
   items: Segment<T>[]
   value: T
   onChange: (value: T) => void
   label: string
   className?: string
+  /**
+   * 窄屏上把每段的左右内边距收一档 ✓。给"档位"那一排用 ✓ —— 保留期是一年时它有 **7 段** ✓
+   * （1 小时 / 6 小时 / 1 天 / 7 天 / 30 天 / 90 天 / 1 年 ✓），360px 宽的屏幕上要排成一行 ✓；
+   * 两个页签那条（资源 / 网络延迟 ✓）不需要 ✓。
+   * ⚠️ `sm:` 起恢复原宽度 ✓ ⇒ 只在手机上变窄 ✓，桌面观感不动 ✓。
+   */
+  narrow?: boolean
 }) {
   return (
     <div
@@ -48,7 +55,7 @@ export function Segmented<T extends string | number>({ items, value, onChange, l
               // keyboard pass; these had only the browser's default.
               "inline-flex h-6 items-center gap-1.5 rounded text-xs whitespace-nowrap transition-colors max-sm:h-8",
               "focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:outline-none",
-              item.label === "" ? "px-1.5" : "px-2",
+              item.label === "" ? "px-1.5" : narrow ? "px-1 sm:px-2" : "px-2",
               active ? "bg-accent text-primary" : "text-muted-foreground hover:bg-muted hover:text-foreground",
             )}
           >
