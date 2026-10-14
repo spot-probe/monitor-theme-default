@@ -20,10 +20,20 @@ export function crosshairY(
   value: number | null | undefined,
   domainTop: number,
   height: number,
+  domainBottom = 0,
 ): number | null {
   if (value === null || value === undefined || !Number.isFinite(value)) return null
   if (!Number.isFinite(domainTop) || domainTop <= 0 || !(height > 0)) return null
-  const y = height - (value / domainTop) * height
+  const clamped = Math.min(height, Math.max(0, value))
+  // ⚠️ 速率图是对数轴 ✓（`rateAxis` 的底不是 0 ✗）—— 那时高度按**对数**比例分 ✓，
+  // 线性公式会把点画到错的位置 ✓✗（越低越偏 ✓，而那正是平时的流量所在 ✓）。
+  if (domainBottom > 0 && domainBottom < domainTop) {
+    const v = Math.max(value, domainBottom)
+    const y = height - ((Math.log(v) - Math.log(domainBottom)) /
+      (Math.log(domainTop) - Math.log(domainBottom))) * height
+    return Math.min(height, Math.max(0, y))
+  }
+  const y = height - (clamped / domainTop) * height
   return Math.min(height, Math.max(0, y))
 }
 

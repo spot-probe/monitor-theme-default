@@ -270,8 +270,11 @@ function monthTicks(from: number, to: number, count: number): number[] {
  * Derived from the gridline rather than the reverse -- the smallest round step
  * whose fourth multiple clears the data. Chosen the other way, the top is round
  * while the four gridlines beneath it are not: a ceiling of 75% draws lines at
- * 18.75 and 56.25. `base` is 1024 for a quantity written in binary units, so the
- * steps are round in the unit it is printed in.
+ * 18.75 and 56.25.
+ *
+ * ⚠️ 从前的 `base = 1024` 分支**删掉了** ✗：它只被速率图用 ✓，而速率图现在走
+ * `rateAxis` 的对数轴 ✓（那段 1024 阶梯的取舍见 git 记录 ✓）。占用率只有一个底 ✓，
+ * 所以这里只剩十进制 ✓。
  *
  * `floor` keeps an idle machine looking idle: tracked exactly, a host that never
  * exceeds 0.4% CPU would get an axis of 0-0.4 and render every scheduler blip as
@@ -318,6 +321,47 @@ const LADDER: Record<number, number[]> = {
  */
 export function quarters(top: number): number[] {
   return [0, 0.25, 0.5, 0.75, 1].map((f) => top * f)
+}
+
+/**
+ * The rungs of a logarithmic byte axis: 1, 10 and 100 of each binary unit, so every
+ * gridline prints as a round label -- 100 B, 1 KB, 10 KB, 100 KB, 1 MB. Adjacent
+ * rungs are 10 apart, or 10.24 across a unit, which draws as even.
+ */
+const rung = (i: number) => 1024 ** Math.floor(i / 3) * 10 ** (i % 3)
+
+/** The rung `RATE_FLOOR` sits on. */
+const FLOOR = 3
+
+/**
+ * The lowest rate drawn, 1 KB/s, since a log axis has no zero. An agent's own
+ * reports run below it -- 0.2 to 0.7 KB/s each way -- so a node doing nothing else
+ * lies along the floor rather than drawing that traffic, magnified, as activity.
+ */
+export const RATE_FLOOR = rung(FLOOR)
+
+/**
+ * A logarithmic axis for transfer rates, from the rung at or below `low` to the
+ * rung at or above `high`, and never below `RATE_FLOOR`.
+ *
+ * At most six labels, counted down from the top, which is the one that says how far
+ * the axis reaches. Six label every rung from the floor to 100 MB/s, the bursts of a
+ * gigabit port, so an idle line lies on a labelled gridline; on a panel 120 px tall
+ * they sit 24 px apart. Wider spans take every other rung: 1 KB/s to 1 GB/s is
+ * seven, and a label on each would sit 20 px from the next.
+ *
+ * ⚠️ 与 `axisTop` 是两件事 ✗：那个是"零锚定的十进制刻度"，用来画占用率；
+ * 速率跨好几个数量级 ✓ ⇒ 只能走对数 ✓（线性轴下，按突发定标会让平时那条线贴着底 ✓✗）。
+ */
+export function rateAxis(low: number, high: number): { domain: [number, number]; ticks: number[] } {
+  let bottom = FLOOR
+  while (rung(bottom + 1) <= Math.min(low, high)) bottom++
+  let top = bottom + 1
+  while (rung(top) < high) top++
+  const step = Math.ceil((top - bottom) / 5)
+  const ticks: number[] = []
+  for (let i = top; i >= bottom; i -= step) ticks.unshift(rung(i))
+  return { domain: [rung(bottom), rung(top)], ticks }
 }
 
 /**
