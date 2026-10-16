@@ -7,7 +7,7 @@
 // Nothing imports it, so the bundle never includes it.
 import {
   availabilityText, missingMinutes, minuteLabel, outageLength, segmentSpan, segmentsFor, segmentText,
-  segmentTone, stepHours, stillDown, TONE_LABEL, windowLabel, type Availability, type Incident, type Segment,
+  calendarCells, segmentTone, stepHours, stillDown, TONE_LABEL, windowLabel, type Availability, type Incident, type Segment,
 } from "./uptime.ts"
 
 let failed = 0
@@ -178,6 +178,46 @@ eq(/^\d{1,2}月\d{1,2}日 \d{2}:\d{2}$/.test(minuteLabel(T)), true, `时间戳�
 eq(missingMinutes([{ ts: T, n: 60, m: 60 }, { ts: T + 3_600, n: 48, m: 60 }]), 12, "缺 12 分钟")
 eq(missingMinutes([{ ts: T, n: 44, m: 44 }]), 0, "残桶满则零")
 eq(missingMinutes([]), 0, "空列表")
+
+// calendarCells: 4 小时一格。⚠️ 一格里的四个小时里只要有一小时**完全没上报**，
+// 这一格就必须是**离线** —— 把四小时的分钟数相加再判会把那次中断稀释成"部分异常"
+// （3 小时正常 ⇒ n/m = 0.75），那就把一次真实的中断画轻了。
+{
+  const HOUR = 3_600
+  const to = Math.floor(Date.parse("2026-10-16T12:00:00Z") / 1_000)
+  const t0 = Math.floor((to - 4 * HOUR) / (4 * HOUR)) * 4 * HOUR
+  // 一格就是一小时 ⇒ 那一小时完全没上报，这一格就是离线（不再有"被稀释"的可能 ✓）。
+  const withGap = calendarCells({ from: t0, to, incidents: [], buckets: [
+    { ts: t0, n: 60, m: 60 }, { ts: t0 + 1 * HOUR, n: 60, m: 60 },
+    { ts: t0 + 2 * HOUR, n: 0, m: 60 }, { ts: t0 + 3 * HOUR, n: 60, m: 60 },
+  ] }, 168)
+  const gapCell = withGap.filter((c) => c.m > 0 && c.n === 0)
+  // 桶宽一小时、格子半小时 ⇒ 那个桶铺到它覆盖的两格上，两格都该是离线。
+  eq(gapCell.length, 2, `完全没上报的那个小时铺到的两格（得到 ${gapCell.length} 格）`)
+  eq(gapCell.every((c) => c.tone === "down"), true, `那两格都必须是离线`)
+
+  const empty = calendarCells({ from: to, to, incidents: [], buckets: [] }, 168)
+  eq(empty.length, 336, "7 × 24 = 168 格")
+  eq(empty.every((c) => c.tone === "unknown"), true, "没有桶的格子是无数据，不是离线")
+
+  const full = calendarCells({ from: t0, to, incidents: [], buckets: [
+    { ts: t0, n: 60, m: 60 }, { ts: t0 + 1 * HOUR, n: 60, m: 60 },
+    { ts: t0 + 2 * HOUR, n: 60, m: 60 }, { ts: t0 + 3 * HOUR, n: 60, m: 60 },
+  ] }, 168)
+  eq(full.filter((c) => c.m > 0).every((c) => c.tone === "ok"), true, "四小时都满 ⇒ 正常")
+
+  const partial = calendarCells({ from: t0, to, incidents: [], buckets: [
+    { ts: t0, n: 60, m: 60 }, { ts: t0 + 1 * HOUR, n: 60, m: 60 },
+    { ts: t0 + 2 * HOUR, n: 60, m: 60 }, { ts: t0 + 3 * HOUR, n: 30, m: 60 },
+  ] }, 168)
+  // 一格一桶之后，要看的是**那一格**，不能再断言所有带 m 的格子：
+  // 那是四小时合并成格时的写法（四个桶落在同一格里）。
+  const part = partial.filter((c) => c.n > 0 && c.n < c.m)
+  // 桶宽一小时、格子半小时 ⇒ 那个不满的桶同样铺到两格上。
+  eq(part.length, 2, `有上报但不齐的桶铺到的两格（得到 ${part.length} 个）`)
+  eq(part.every((c) => c.tone === "warn"), true, `那两格都是部分异常`)
+}
+
 
 if (failed) {
   console.error(`\n${failed} 项不通过`)

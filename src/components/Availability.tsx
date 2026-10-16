@@ -6,9 +6,9 @@ import { Card } from "@/components/ui/card"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
 import {
-  availabilityText, missingMinutes, minuteLabel, outageLength, segmentSpan, segmentText, segmentsFor,
-  segmentTone, stepHours, stillDown, TONE_CLASS, TONE_LABEL, windowLabel,
-  type Availability, type Incident, type Segment, type Tone,
+  availabilityText, calendarCells, missingMinutes, minuteLabel, outageLength, SLOT_HOURS, SLOTS_PER_DAY,
+  segmentSpan, segmentText, stillDown, TONE_CLASS, TONE_LABEL, windowLabel,
+  type Availability, type Cell, type Incident, type Segment, type Tone,
 } from "@/lib/uptime"
 
 /**
@@ -20,6 +20,17 @@ const LISTED = 6
 
 /** The legend's order: the states a reader looks for, least-informed last. */
 const LEGEND: Tone[] = ["ok", "warn", "down", "unknown"]
+
+/** 行的标签：周一在第一行（与 `calendarCells` 的布局一致）。 */
+const WEEKDAY = ["一", "二", "三", "四", "五", "六", "日"]
+
+/** 列的标签：每格的起始小时（4 小时一格 ⇒ 00 04 08 12 16 20）。 */
+// 24 列全都写标签会挤成一团 ⇒ **每 4 小时写一个**（00 04 08 …），其余留空占位以对齐。
+const SLOT_LABELS = Array.from({ length: SLOTS_PER_DAY }, (_, i) =>
+  Number.isInteger(i * SLOT_HOURS) && (i * SLOT_HOURS) % 4 === 0
+    ? String(i * SLOT_HOURS).padStart(2, "0")
+    : "",
+)
 
 /** The tooltip's width, so its position can be clamped to the card. */
 const TOOLTIP = "14rem"
@@ -92,8 +103,10 @@ export function AvailabilityCard({ data, hours }: { data: Availability; hours: n
   //（这套语义 `segmentTone`/`segmentText` 本来就有 ✓，我先前写死 1 小时把它盖掉了 ✓✗）。
   // ⚠️ 关键是 `windowHours` 已经封顶一周 ✓ ⇒ 推出来的步长与保留期无关 ✓
   //（保留期 90 天时原来是"一天一格 + 往回铺 90 天空格" ✓✗，现在不会了 ✓）。
-  const step = stepHours(windowHours)
-  const segments = segmentsFor(data, windowHours, step)
+  const cells = calendarCells(data, windowHours)
+  // 提示框与无障碍标签仍然吃 `Segment` 那一套（状态文案、区间文案都在 `uptime.ts` 里，
+  // 不在这里重写一遍 —— 页面只有一套说法 ✓）。
+  const asSegment = (c: Cell): Segment => ({ ts: c.ts, n: c.n, m: c.m, known: c.tone !== "unknown" })
   // The width of one segment, in hours, for labelling it. Coarser than an hour
   // whenever the window is long enough that hourly strips would be unreadable:
   // a week is 3-hour segments, a month is 12-hour ones.
@@ -121,15 +134,18 @@ export function AvailabilityCard({ data, hours }: { data: Availability; hours: n
   const bar = useRef<HTMLDivElement>(null)
 
   const move = (event: React.KeyboardEvent, i: number) => {
+    // 网格是 7 行 × 6 列：左右走一格、上下走一行（±6）。仍然是一个 tab 停靠。
     const next =
       event.key === "ArrowRight" ? i + 1
       : event.key === "ArrowLeft" ? i - 1
+      : event.key === "ArrowDown" ? i + SLOTS_PER_DAY
+      : event.key === "ArrowUp" ? i - SLOTS_PER_DAY
       : event.key === "Home" ? 0
-      : event.key === "End" ? segments.length - 1
+      : event.key === "End" ? cells.length - 1
       : null
     if (next === null) return
     event.preventDefault()
-    const index = Math.max(0, Math.min(segments.length - 1, next))
+    const index = Math.max(0, Math.min(cells.length - 1, next))
     setCursor(index)
     setActive(index)
     const items = bar.current?.children
@@ -137,20 +153,21 @@ export function AvailabilityCard({ data, hours }: { data: Availability; hours: n
     if (target instanceof HTMLElement) target.focus()
   }
 
-  const shown = active === null ? null : segments[active]
+  const shown = active === null ? null : asSegment(cells[active])
   // Centred on its segment, then pulled inside the card: a tooltip centred on the
   // first or last hour would otherwise hang off the edge, and the hour it belongs
   // to is still the nearest one to it.
   const left =
     active === null
       ? "0"
-      : `clamp(0px, calc(${(((active + 0.5) / segments.length) * 100).toFixed(3)}% - ${TOOLTIP} / 2), calc(100% - ${TOOLTIP}))`
+      // 横向按**列**居中（问的是第几列，不是"第几格"）：`active % 6`。
+      : `clamp(0px, calc(${((((active % SLOTS_PER_DAY) + 0.5) / SLOTS_PER_DAY) * 100).toFixed(3)}% - ${TOOLTIP} / 2), calc(100% - ${TOOLTIP}))`
 
   return (
     <Card className="gap-0 p-4">
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
         <h4 className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground">
-          在线状态时间轴
+          在线状态日历
           {/* A button, not the icon alone: it is focusable, so the explanation is
               reachable without a pointer, and its 24px target is one a reader can
               hit. The negative margin pulls it back onto the title's baseline,
@@ -167,7 +184,7 @@ export function AvailabilityCard({ data, hours }: { data: Availability; hours: n
             </TooltipTrigger>
             <TooltipContent>
               <p className="leading-relaxed">
-                按段统计：每段内每分钟都应有一条上报记录，缺一分钟即计为未上报。悬停或聚焦某一段可看该段的实际分钟数。
+                按格统计：每格是四小时，格内每分钟都应有一条上报记录，缺一分钟即计为未上报。悬停或聚焦某一格可看该格的实际分钟数；方向键可逐格走。
               </p>
               {/* The four colours again, in the same shape the legend uses: the
                   key belongs beside the rule that produced it, and a reader who
@@ -193,48 +210,74 @@ export function AvailabilityCard({ data, hours }: { data: Availability; hours: n
         )}
       </div>
 
-      {/* One segment per hour, each focusable and each carrying its own reading:
-          hovering is the quick path, and the arrow keys are the one that also
-          works without a pointer. The bar is a group with its own summary, so a
-          screen reader landing on it is told what it is before walking it. */}
+      {/* ⭐ **7 × 6 的日历格** ✓（周一…周日 × 每 4 小时）—— 换掉原来那条 56 格的横条。
+          横条只能看出"哪几天有事"；日历格能看出"**每天哪个时段**不稳"，
+          例如"每天凌晨 2–6 点掉线"在这张图上立刻可见 ✓。
+          ⚠️ 交互没有退化 ✓：仍然是**一个 tab 停靠 + 方向键走格**（左右 ±1 格、上下 ±6 格），
+          42 个格子不会变成 42 个 tab 停靠。 */}
       <div
         ref={bar}
         role="group"
-        aria-label={`在线状态时间轴，${windowLabel(from, to)}，正常率 ${availabilityText(fraction)}，` +
-          `${faults}。用左右方向键逐段查看`}
-        // ⚠️ 这里**不再固定高度** ✗：格子改成长宽比 3:5 ✓ ⇒ 高度由宽度算出 ✓
-        //（`h-6` 会把它压扁、比也就没了 ✓）。
-        className="relative mt-3 flex items-start gap-0.5"
+        aria-label={`在线状态日历，${windowLabel(from, to)}，正常率 ${availabilityText(fraction)}，` +
+          `${faults}。用方向键逐格查看`}
+        className="relative mt-3"
         onMouseLeave={() => setActive(null)}
         onBlur={(e) => {
           if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setActive(null)
         }}
       >
-        {segments.map((s, i) => (
-          <div
-            key={s.ts}
-            role="img"
-            tabIndex={i === cursor ? 0 : -1}
-            aria-label={`${segmentSpan(s.ts, step)}，${segmentText(s)}`}
-            onMouseEnter={() => setActive(i)}
-            onFocus={() => {
-              setActive(i)
-              setCursor(i)
-            }}
-            onKeyDown={(e) => move(e, i)}
-            className={cn(
-              // ⚠️ 每一格都是**独立的 3:5 圆角矩形** ✓（与探测点阵同一套语汇 ✓：
-              // 那里是 `h-[15px] w-[9px] rounded-[3px]` ✓）。
-              // 宽度由 flex 平分 ✓，高度由 `aspect-[4/5]` 跟着算 ✓
-              // ⇒ 不再是"一整条长条只在首尾圆角" ✗（那样看不出格子 ✓）。
-              "aspect-[4/5] min-w-px flex-1 rounded-[8px] outline-offset-1 " +
-                "focus-visible:outline-2 focus-visible:outline-ring",
-              TONE_CLASS[segmentTone(s)],
-              i === active && "ring-1 ring-ring ring-inset",
-            )}
-          />
-        ))}
-        {shown && <Hover segment={shown} step={step} left={left} />}
+        <div className="flex gap-1.5">
+          {/* 行的标签：周一到周日。只占一格宽，字号与刻度同档。 */}
+          <div className="grid shrink-0 grid-rows-[repeat(7,1.5rem)] gap-1 text-[10px] leading-none text-muted-foreground">
+            {WEEKDAY.map((w) => (
+              <span key={w} className="grid w-4 place-items-center">
+                {w}
+              </span>
+            ))}
+          </div>
+          {/* ⚠️ 宽度**限住**：24 列铺满整卡时每格 ≈50px（方的话 7 行就 350px 高 ✗），
+                压扁又变成横条 ✗。GitHub 那种"又小又宽"靠的是**列多**（一整年 53 列），
+                7 天 × 每小时只有 24 列 ⇒ 只能二者取一。
+                这里取"接近小方块"：限到 42rem ⇒ 每格约 26×20px ✓。 */}
+            <div className="min-w-0 flex-1">
+            <div className="grid grid-cols-[repeat(48,minmax(0,1fr))] gap-1">
+              {cells.map((c, i) => (
+                <div
+                  key={`${c.weekday}-${c.slot}`}
+                  role="img"
+                  tabIndex={i === cursor ? 0 : -1}
+                  aria-label={`${segmentSpan(c.ts, SLOT_HOURS)}，${segmentText(asSegment(c))}`}
+                  onMouseEnter={() => setActive(i)}
+                  onFocus={() => {
+                    setActive(i)
+                    setCursor(i)
+                  }}
+                  onKeyDown={(e) => move(e, i)}
+                  className={cn(
+                    // ⚠️ 尺寸的两次教训都在这里 ✗：
+                    //   · `aspect-square` + `w-full` ⇒ 每格 = 卡片宽/6（≈300px），
+                    //     高度跟着算出来 ⇒ 整张卡被撑成一屏多高 ✗；
+                    //   · 只把高度固定、宽度仍 `w-full` ⇒ 每行变成一根长条 ✗。
+                    // ⇒ 固定边长：24px 方块，和 GitHub 那套热力图一个语汇 ✓。
+                    "h-5 w-full rounded-[4px] outline-offset-1 " +
+                      "focus-visible:outline-2 focus-visible:outline-ring",
+                    TONE_CLASS[c.tone],
+                    i === active && "ring-1 ring-ring ring-inset",
+                  )}
+                />
+              ))}
+            </div>
+            {/* 列的标签：每格的起始小时。 */}
+            <div className="mt-1 grid grid-cols-[repeat(48,minmax(0,1fr))] gap-1 text-[10px] leading-none text-muted-foreground">
+              {SLOT_LABELS.map((s) => (
+                <span key={s} className="tnum text-center">
+                  {s}
+                </span>
+              ))}
+            </div>
+          </div>
+        </div>
+        {shown && <Hover segment={shown} step={SLOT_HOURS} left={left} />}
       </div>
 
       <div className="mt-1 flex justify-between text-xs text-muted-foreground">

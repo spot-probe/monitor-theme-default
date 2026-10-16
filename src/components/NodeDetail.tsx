@@ -334,7 +334,7 @@ export function NodeDetail({ node, showPeak, onBack }: {
     // oxlint-disable-next-line react/set-state-in-effect
     setAvail(null)
     api<{ availability: Availability | null }>(
-      `/nodes/${node.id}/metrics?hours=168&series=availability`,
+      `/nodes/${node.id}/metrics?hours=168&series=availability&slot=1800`,
     )
       .then((next) => { if (active) setAvail(next.availability ?? null) })
       // No error of its own: the bar is an addition to this screen, and the charts
