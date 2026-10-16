@@ -1139,7 +1139,11 @@ export function NodeDetail({ node, showPeak, onBack }: {
             }
           >
             <ResponsiveContainer>
-              <ComposedChart data={metricRows} margin={{ top: 8, right: hasProcs ? LOAD_AXIS : 0 }}>
+              {/* ⚠️ `right: 0` 是**对的** ✓：这张自己画了右轴，recharts 会替它让出那一段宽度；
+                  再写 `LOAD_AXIS` 就等于预留两次 ⇒ 右边多出一条白带（实测过 ✗）。
+                  上面四张写 `LOAD_AXIS` 是另一回事：它们**没有**右轴，那 36px 是替
+                  「有右轴的那张」对齐用的（见 CPU 那张 margin 的注释）。 */}
+              <ComposedChart data={metricRows} margin={{ top: 8, right: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" className="stroke-muted" vertical={false} />
                 <XAxis {...timeAxis(metricRows)} />
                 {/* ⚠️ `allowDecimals={false}`：连接数是整数，默认的刻度会给 11.25 这种。 */}
