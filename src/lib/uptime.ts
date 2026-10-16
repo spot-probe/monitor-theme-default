@@ -139,56 +139,74 @@ const STEPS = [1, 2, 3, 6, 12, 24] as const
 const MOST = 60
 
 /**
- * 日历格里的一格：星期几 × 一天里的第几个时段。
+ * 日历格里的一格：**第几行（日期）× 一天里的第几个时段**。
  *
- * ⚠️ `tone` 必须是**先逐桶判档、再取最坏**得来的，不能把多个桶的分钟数相加之后再判 ✗：
- * 相加会把"整整一小时没有上报"稀释成"部分异常"，正好把一次真实的中断画轻了。
- * `n`/`m` 仍然相加，但它们只用来写提示文字。
+ * ⚠️ `row` 是**窗口里的第几天**，不是星期几 —— 见 [`calendarCells`] 的说明。
  */
-export type Cell = { weekday: number; slot: number; ts: number; tone: Tone; n: number; m: number }
+export type Cell = { row: number; slot: number; ts: number; tone: Tone; n: number; m: number }
 
 /**
- * 一天切几格：**半小时 ⇒ 48 格**。7 行（星期）× 48 列 = 336 格，最近 7 天铺满一次。
+ * 一天切几格：**半小时 ⇒ 48 格**。7 行（日期）× 48 列 = 336 格。
  *
- * ⚠️ 为什么是半小时：卡片约 1200px，要"铺满 + 接近方格"就需要约 48 列；
- * 24 列铺满时每格约 50px，方的话 7 行就 350px 高（撑爆），压扁又成了长条。
- * GitHub 那种"又小又宽"靠的是列多（一整年 53 列），我们只有 7 天，所以细到半小时。
+ * ⚠️ 粒度的选择是被几何逼出来的，而且**不是越细越好** ✗：
+ *   96 列（一刻钟）⇒ 每格只有约 12px，扣除间距几乎糊成一片 ✗；
+ *   48 列（半小时）⇒ 每格约 20px、缝 4px ⇒ 与 GitHub 那种清爽感相当 ✓。
+ * 数据本身支持到分钟级（hub 的分桶下限是 60 秒）。
  */
 export const SLOT_HOURS = 0.5
 export const SLOTS_PER_DAY = Math.round(24 / SLOT_HOURS)
 
+/** 网格的行数：最近 7 个自然日（含今天）。 */
+export const ROWS = 7
+
 /** 取最坏时比轻重。⚠️ `unknown` 与 `warn` 同权 —— 它表示"没有数据"，不是"更糟"。 */
 const SEVERITY: Record<Tone, number> = { ok: 0, warn: 1, unknown: 1, down: 2 }
 
+/** 某时刻所在**本地自然日**的零点（秒）。 */
+function midnightOf(secs: number): number {
+  const d = new Date(secs * 1_000)
+  d.setHours(0, 0, 0, 0)
+  return d.getTime() / 1_000
+}
+
 /**
- * 把逐桶的可用率摆成 7 × 48 的日历格（周一在第一行；第 0 列是 00:00–00:30）。
+ * 把逐桶的可用率摆成 7 行 × 48 列的日历格，**行是日期、从上到下时间递增** ✓。
  *
- * ⚠️ **桶宽从数据里量**，不写死 ✓：hub 给半小时桶时一格正好一桶；老版本 hub 只给
- * 一小时桶时，那个桶会铺到它覆盖的两格上（都标成同一状态），于是**不会出现半格空着** ✗。
- * 这样 hub 升级前后、以及两边版本错开的中间态，页面都画得出东西 ✓。
+ * ⚠️ 行**不是星期** ✗ —— 这一点踩过坑：窗口是"最近 7 个自然日"，它跨**两个**周一至
+ * 周日，用星期当行就必然出现"六、日两行拿到的是一周前的日期"（六=10月10日、
+ * 日=10月11日，而其它的都是 10月12–16日），看起来像时间跳回去了 ✓✗。
+ * 改成日期之后，每行与每一天一一对应，"更旧"就不可能发生 ✓。
+ * 代价是失去"星期"这个维度（看不出"每个周一都不稳"），换来的是日期完全准确。
+ *
+ * ⚠️ 桶宽**从数据里量**，不写死 ✓：hub 给半小时桶时一格一桶；老版本 hub 只给
+ * 一小时桶时，那个桶会铺到它覆盖的两格上（都标同一状态）⇒ 不会出现"半格空着" ✓。
  *
  * 没有桶的格子是 `unknown` —— 与时间轴那条"没上报不等于离线"同一套规矩。
- * 星期与小时按**本地时区**取：这张图是给人看"每天哪个时段不稳"，那要按读者自己的钟分。
+ * 每一格的 `ts` 都是**本地零点 + 时段**，所以空格的提示也能说清是哪天哪一段 ✓。
  */
-export function calendarCells(data: Availability, hours: number): Cell[] {
+export function calendarCells(data: Availability): Cell[] {
   const cells: Cell[] = []
-  for (let weekday = 0; weekday < 7; weekday++)
+  const today = midnightOf(data.to)
+  const first = today - (ROWS - 1) * 86_400
+  for (let row = 0; row < ROWS; row++)
     for (let slot = 0; slot < SLOTS_PER_DAY; slot++)
-      cells.push({ weekday, slot, ts: 0, tone: "unknown", n: 0, m: 0 })
+      cells.push({ row, slot, ts: first + row * 86_400 + slot * SLOT_HOURS * 3_600, tone: "unknown", n: 0, m: 0 })
   const width = SLOT_HOURS * 3_600
-  const start = Math.floor((data.to - Math.min(hours, 168) * 3_600) / width) * width
-  // 桶自己的宽度：相邻两个桶的时间差。只有一个桶（或没有）时按一小时算。
+  // 只保留这 7 个自然日之内的桶（请求的 168 小时会多出前一天的尾巴）。
+  const start = first
+  const end = first + ROWS * 86_400
   const bucketSecs =
     data.buckets.length > 1 ? Math.max(60, data.buckets[1].ts - data.buckets[0].ts) : 3_600
   const seen = new Set<Cell>()
   for (const b of data.buckets) {
-    const end = b.ts + bucketSecs
-    for (let ts = Math.floor(Math.max(b.ts, start) / width) * width; ts < end; ts += width) {
-      if (ts < start) continue
+    for (let ts = b.ts; ts < b.ts + bucketSecs; ts += width) {
+      if (ts < start || ts >= end) continue
+      const day = midnightOf(ts)
+      const row = Math.round((day - first) / 86_400)
+      if (row < 0 || row >= ROWS) continue
       const d = new Date(ts * 1_000)
-      const weekday = (d.getDay() + 6) % 7 // JS：0 = 周日 ⇒ 换成"周一在第一行"
       const minutes = d.getHours() * 60 + d.getMinutes()
-      const cell = cells[weekday * SLOTS_PER_DAY + Math.floor(minutes / (SLOT_HOURS * 60))]
+      const cell = cells[row * SLOTS_PER_DAY + Math.floor(minutes / (SLOT_HOURS * 60))]
       if (!cell) continue
       const tone = segmentTone({ ts, n: b.n, m: b.m, known: true })
       if (!seen.has(cell)) {

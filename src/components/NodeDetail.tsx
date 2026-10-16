@@ -628,7 +628,7 @@ export function NodeDetail({ node, showPeak, onBack }: {
         </dl>
       </Card>
 
-      {avail && <AvailabilityCard data={avail} hours={historyHours} />}
+      {avail && <AvailabilityCard data={avail} />}
 
       {/* The operator's own note, which only a signed-in browser is sent at all
           (`node_view` attaches `remark` with the other panel-only fields), so this

@@ -190,26 +190,26 @@ eq(missingMinutes([]), 0, "空列表")
   const withGap = calendarCells({ from: t0, to, incidents: [], buckets: [
     { ts: t0, n: 60, m: 60 }, { ts: t0 + 1 * HOUR, n: 60, m: 60 },
     { ts: t0 + 2 * HOUR, n: 0, m: 60 }, { ts: t0 + 3 * HOUR, n: 60, m: 60 },
-  ] }, 168)
+  ] })
   const gapCell = withGap.filter((c) => c.m > 0 && c.n === 0)
   // 桶宽一小时、格子半小时 ⇒ 那个桶铺到它覆盖的两格上，两格都该是离线。
   eq(gapCell.length, 2, `完全没上报的那个小时铺到的两格（得到 ${gapCell.length} 格）`)
   eq(gapCell.every((c) => c.tone === "down"), true, `那两格都必须是离线`)
 
-  const empty = calendarCells({ from: to, to, incidents: [], buckets: [] }, 168)
+  const empty = calendarCells({ from: to, to, incidents: [], buckets: [] })
   eq(empty.length, 336, "7 × 24 = 168 格")
   eq(empty.every((c) => c.tone === "unknown"), true, "没有桶的格子是无数据，不是离线")
 
   const full = calendarCells({ from: t0, to, incidents: [], buckets: [
     { ts: t0, n: 60, m: 60 }, { ts: t0 + 1 * HOUR, n: 60, m: 60 },
     { ts: t0 + 2 * HOUR, n: 60, m: 60 }, { ts: t0 + 3 * HOUR, n: 60, m: 60 },
-  ] }, 168)
+  ] })
   eq(full.filter((c) => c.m > 0).every((c) => c.tone === "ok"), true, "四小时都满 ⇒ 正常")
 
   const partial = calendarCells({ from: t0, to, incidents: [], buckets: [
     { ts: t0, n: 60, m: 60 }, { ts: t0 + 1 * HOUR, n: 60, m: 60 },
     { ts: t0 + 2 * HOUR, n: 60, m: 60 }, { ts: t0 + 3 * HOUR, n: 30, m: 60 },
-  ] }, 168)
+  ] })
   // 一格一桶之后，要看的是**那一格**，不能再断言所有带 m 的格子：
   // 那是四小时合并成格时的写法（四个桶落在同一格里）。
   const part = partial.filter((c) => c.n > 0 && c.n < c.m)
@@ -217,6 +217,20 @@ eq(missingMinutes([]), 0, "空列表")
   eq(part.length, 2, `有上报但不齐的桶铺到的两格（得到 ${part.length} 个）`)
   eq(part.every((c) => c.tone === "warn"), true, `那两格都是部分异常`)
 }
+// ⚠️ 窗口对齐到本地零点之后，七行（星期）拿到的日期必须落在**同一周**里：
+// 请求 168 小时会跨 8 个自然日，不对齐就会出现两行拿着一周前的日期（看着像"更旧"）。
+{
+  const HOUR = 3_600
+  const now = Math.floor(Date.parse("2026-10-16T22:15:00+08:00") / 1_000)
+  const buckets = []
+  for (let h = 0; h < 168; h++) buckets.push({ ts: now - h * HOUR, n: 60, m: 60 })
+  const cells = calendarCells({ from: now - 168 * HOUR, to: now, incidents: [], buckets })
+  const dates = new Set(cells.filter((c) => c.m > 0).map((c) => new Date(c.ts * 1_000).toDateString()))
+  eq(dates.size, 7, `只应有 7 个自然日（得到 ${dates.size}）`)
+  const days = [...dates].map((d) => new Date(d).getTime()).sort((a, b) => a - b)
+  eq((days[days.length - 1] - days[0]) / 86_400_000, 6, "首尾日期相差恰好 6 天")
+}
+
 
 
 if (failed) {

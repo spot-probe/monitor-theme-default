@@ -1,15 +1,24 @@
 import { useRef, useState } from "react"
-import { Info } from "lucide-react"
+import { ChevronRight, Info } from "lucide-react"
 
 import { Swatch } from "@/components/ChartTooltip"
 import { Card } from "@/components/ui/card"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
 import {
-  availabilityText, calendarCells, missingMinutes, minuteLabel, outageLength, SLOT_HOURS, SLOTS_PER_DAY,
+  availabilityText, calendarCells, ROWS, missingMinutes, minuteLabel, outageLength, SLOT_HOURS, SLOTS_PER_DAY,
   segmentSpan, segmentText, stillDown, TONE_CLASS, TONE_LABEL, windowLabel,
   type Availability, type Cell, type Incident, type Segment, type Tone,
 } from "@/lib/uptime"
+
+
+/** 列的标签：每格的起始小时（4 小时一格 ⇒ 00 04 08 12 16 20）。 */
+// 24 列全都写标签会挤成一团 ⇒ **每 4 小时写一个**（00 04 08 …），其余留空占位以对齐。
+const SLOT_LABELS = Array.from({ length: SLOTS_PER_DAY }, (_, i) =>
+  Number.isInteger(i * SLOT_HOURS) && (i * SLOT_HOURS) % 4 === 0
+    ? String(i * SLOT_HOURS).padStart(2, "0")
+    : "",
+)
 
 /**
  * How many outages are listed before the rest are counted instead. A node that
@@ -20,17 +29,6 @@ const LISTED = 6
 
 /** The legend's order: the states a reader looks for, least-informed last. */
 const LEGEND: Tone[] = ["ok", "warn", "down", "unknown"]
-
-/** 行的标签：周一在第一行（与 `calendarCells` 的布局一致）。 */
-const WEEKDAY = ["一", "二", "三", "四", "五", "六", "日"]
-
-/** 列的标签：每格的起始小时（4 小时一格 ⇒ 00 04 08 12 16 20）。 */
-// 24 列全都写标签会挤成一团 ⇒ **每 4 小时写一个**（00 04 08 …），其余留空占位以对齐。
-const SLOT_LABELS = Array.from({ length: SLOTS_PER_DAY }, (_, i) =>
-  Number.isInteger(i * SLOT_HOURS) && (i * SLOT_HOURS) % 4 === 0
-    ? String(i * SLOT_HOURS).padStart(2, "0")
-    : "",
-)
 
 /** The tooltip's width, so its position can be clamped to the card. */
 const TOOLTIP = "14rem"
@@ -91,19 +89,15 @@ function Hover({ segment, step, left }: { segment: Segment; step: number; left: 
  * span, with the part the hub had nothing for shown as "无数据" rather than left
  * out, so a node added yesterday is visibly a node added yesterday.
  */
-export function AvailabilityCard({ data, hours }: { data: Availability; hours: number }) {
+export function AvailabilityCard({ data }: { data: Availability }) {
+  // ⭐ 默认收起 ✓：这张卡在最上面，展开才看细节。
   const { from, to, incidents } = data
-  // ⚠️ 时间轴固定看**最近一周** ✓、步长固定**一小时** ✓（168 格 ✓）——
-  // 这本来就是它注释里写的意图（"covers a fixed week" ✓），只是代码此前跟着
-  // **保留期**走 ✗ ⇒ 保留期设成 90 天时，格子会粗到一天一格、还要往回铺 90 天空格 ✗。
-
-  const windowHours = Math.min(hours, 168)
   // ⚠️ 步长**由这一周的窗口推**（不是写死 ✓）：`stepHours(168)` = **3 小时** ✓
   // ⇒ 一格 = **180 分钟** ✓ —— 满 180 分钟为绿 ✓、缺任何一分钟为「部分异常 · 上报 N/180」✓
   //（这套语义 `segmentTone`/`segmentText` 本来就有 ✓，我先前写死 1 小时把它盖掉了 ✓✗）。
   // ⚠️ 关键是 `windowHours` 已经封顶一周 ✓ ⇒ 推出来的步长与保留期无关 ✓
   //（保留期 90 天时原来是"一天一格 + 往回铺 90 天空格" ✓✗，现在不会了 ✓）。
-  const cells = calendarCells(data, windowHours)
+  const cells = calendarCells(data)
   // 提示框与无障碍标签仍然吃 `Segment` 那一套（状态文案、区间文案都在 `uptime.ts` 里，
   // 不在这里重写一遍 —— 页面只有一套说法 ✓）。
   const asSegment = (c: Cell): Segment => ({ ts: c.ts, n: c.n, m: c.m, known: c.tone !== "unknown" })
@@ -129,6 +123,7 @@ export function AvailabilityCard({ data, hours }: { data: Availability; hours: n
   // Where the pointer or the keyboard is. `cursor` is the tab stop -- one segment
   // carries it, so the bar is one stop in the page's tab order rather than 168 of
   // them, and the arrow keys walk the rest.
+  const [open, setOpen] = useState(false)
   const [active, setActive] = useState<number | null>(null)
   const [cursor, setCursor] = useState(0)
   const bar = useRef<HTMLDivElement>(null)
@@ -167,7 +162,17 @@ export function AvailabilityCard({ data, hours }: { data: Availability; hours: n
     <Card className="gap-0 p-4">
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
         <h4 className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground">
-          在线状态日历
+          {/* ⭐ 标题就是开关 ✓（默认**收起**）：这张卡在最上面，收起之后下面的图表顶上来。
+              箭头跟着状态转；`aria-expanded` 让读屏也知道现在是开还是关。 */}
+          <button
+            type="button"
+            onClick={() => setOpen((v) => !v)}
+            aria-expanded={open}
+            className="-m-1 inline-flex items-center gap-1.5 rounded px-1 py-0.5 text-xs font-medium transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-ring"
+          >
+            <ChevronRight className={cn("size-3.5 shrink-0 transition-transform", open && "rotate-90")} aria-hidden />
+            在线状态日历
+          </button>
           {/* A button, not the icon alone: it is focusable, so the explanation is
               reachable without a pointer, and its 24px target is one a reader can
               hit. The negative margin pulls it back onto the title's baseline,
@@ -201,15 +206,21 @@ export function AvailabilityCard({ data, hours }: { data: Availability; hours: n
             </TooltipContent>
           </Tooltip>
         </h4>
-        <p className="text-sm">
-          <span className="text-xs text-muted-foreground">{windowLabel(from, to)}正常率 </span>
-          <span className="tnum font-medium">{availabilityText(fraction)}</span>
+        {/* 正常率与故障摘要**同一组**、一起靠右 ✓：故障那行原来是 `w-full` 独占一行，
+            现在并进来省一行高度，读起来也像一句话（"99.79% · 1 次故障 · 共 21 分钟"）。 */}
+        <p className="flex flex-wrap items-baseline gap-x-3 text-sm">
+          <span>
+            <span className="text-xs text-muted-foreground">{windowLabel(from, to)}正常率 </span>
+            <span className="tnum font-medium">{availabilityText(fraction)}</span>
+          </span>
+          {incidents.length > 0 && (
+            <span className="text-xs text-muted-foreground">{faults}</span>
+          )}
         </p>
-        {incidents.length > 0 && (
-          <p className="w-full text-xs text-muted-foreground">{faults}</p>
-        )}
       </div>
 
+      {open && (
+        <>
       {/* ⭐ **7 × 6 的日历格** ✓（周一…周日 × 每 4 小时）—— 换掉原来那条 56 格的横条。
           横条只能看出"哪几天有事"；日历格能看出"**每天哪个时段**不稳"，
           例如"每天凌晨 2–6 点掉线"在这张图上立刻可见 ✓。
@@ -228,12 +239,18 @@ export function AvailabilityCard({ data, hours }: { data: Availability; hours: n
       >
         <div className="flex gap-1.5">
           {/* 行的标签：周一到周日。只占一格宽，字号与刻度同档。 */}
-          <div className="grid shrink-0 grid-rows-[repeat(7,1.5rem)] gap-1 text-[10px] leading-none text-muted-foreground">
-            {WEEKDAY.map((w) => (
-              <span key={w} className="grid w-4 place-items-center">
-                {w}
-              </span>
-            ))}
+          <div className="flex shrink-0 flex-col gap-1 text-[10px] leading-none text-muted-foreground">
+            {/* ⭐ 行标签是**日期**（不是星期）✓：行与自然日一一对应，从上到下时间递增。
+                ⚠️ 之前用星期当行时，窗口（最近 7 天）跨两个周一至周日，
+                六、日两行会拿到一周前的日期 —— 看着像时间跳回去了 ✗。 */}
+            {Array.from({ length: ROWS }, (_, row) => {
+              const d = new Date(cells[row * SLOTS_PER_DAY].ts * 1_000)
+              return (
+                <span key={row} className="grid h-5 w-10 place-items-center leading-5">
+                  {`${d.getMonth() + 1}/${d.getDate()}`}
+                </span>
+              )
+            })}
           </div>
           {/* ⚠️ 宽度**限住**：24 列铺满整卡时每格 ≈50px（方的话 7 行就 350px 高 ✗），
                 压扁又变成横条 ✗。GitHub 那种"又小又宽"靠的是**列多**（一整年 53 列），
@@ -243,7 +260,7 @@ export function AvailabilityCard({ data, hours }: { data: Availability; hours: n
             <div className="grid grid-cols-[repeat(48,minmax(0,1fr))] gap-1">
               {cells.map((c, i) => (
                 <div
-                  key={`${c.weekday}-${c.slot}`}
+                  key={`${c.row}-${c.slot}`}
                   role="img"
                   tabIndex={i === cursor ? 0 : -1}
                   aria-label={`${segmentSpan(c.ts, SLOT_HOURS)}，${segmentText(asSegment(c))}`}
@@ -280,10 +297,8 @@ export function AvailabilityCard({ data, hours }: { data: Availability; hours: n
         {shown && <Hover segment={shown} step={SLOT_HOURS} left={left} />}
       </div>
 
-      <div className="mt-1 flex justify-between text-xs text-muted-foreground">
-        <span className="tnum">{minuteLabel(from)}</span>
-        <span className="tnum">{minuteLabel(to)}</span>
-      </div>
+      {/* 这里原来有 from/to 两个时间戳，已删 ✓：横轴已经给出"几点"（00 04 … 20），
+          "哪一天"由每格的提示负责，而标题写着"近 7 天" —— 那两个时间戳只是重复。 */}
 
       <ul className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
         {LEGEND.map((tone) => (
@@ -304,6 +319,9 @@ export function AvailabilityCard({ data, hours }: { data: Availability; hours: n
           )}
         </ul>
       )}
+        </>
+      )}
+
     </Card>
   )
 }
