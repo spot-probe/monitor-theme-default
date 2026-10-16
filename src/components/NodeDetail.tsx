@@ -53,6 +53,15 @@ type Point = {
    * drawn only when some row carries one -- the same rule as `swap_used`.
    */
   load1?: number | null
+  /**
+   * ⚠️ 这三个是**可空**的，不是可选的零 ✓：小时行是折桶折出来的，而这三列是后来才加的
+   * （hub 23 → 24 那次迁移）⇒ 迁移之前折出来的那些小时行没有这些数，读出来是 `null`。
+   * ⇒ 画的时候**让线断开** ✓，而不是把 `null` 当 0 连起来：那一段是"没有这个数据"，
+   * 不是"零个连接"。与 `swap_used` / `load1` 同一条规矩。
+   */
+  tcp?: number | null
+  udp?: number | null
+  procs?: number | null
 }
 // `latency` is the bucket's median round trip, null when every probe in it timed
 // out. `band` is the range its answers spanned, absent when they spanned nothing.
@@ -145,9 +154,9 @@ const LOAD_AXIS = 36
 const PALETTE = [
   "var(--color-chart-1)",
   "var(--color-chart-4)",
+  "var(--color-chart-1)",
+  "var(--color-chart-4)",
   "var(--color-chart-2)",
-  "var(--color-chart-3)",
-  "var(--color-chart-5)",
 ]
 
 const TABS = [
@@ -472,6 +481,15 @@ export function NodeDetail({ node, showPeak, onBack }: {
   // `load1`, and an empty right axis over a line along the floor would be a claim
   // about a machine the hub never measured.
   const hasLoad = metricRows.some((m) => typeof m.load1 === "number")
+  // 连接数与进程数：与 `hasSwap` / `hasLoad` 同一套判法 —— 一条都没有就不画那条线，
+  // 而不是画一条贴着地板的线说"零个连接"。
+  const hasTcp = metricRows.some((m) => typeof m.tcp === "number")
+  const hasUdp = metricRows.some((m) => typeof m.udp === "number")
+  const hasProcs = metricRows.some((m) => typeof m.procs === "number")
+  // 左轴管连接数（TCP 与 UDP 量级接近，同轴可比），右轴管进程数（几百 vs 几十，
+  // 同轴会把连接线压成贴地的一条）。两个顶都从窗口自己的最大值取，取不到就给 1。
+  const connTop = Math.max(1, ...metricRows.map((m) => Math.max(m.tcp ?? 0, m.udp ?? 0)))
+  const procsTop = Math.max(1, ...metricRows.map((m) => m.procs ?? 0))
 
   const shownProbes = useMemo(
     () => pingSeries.filter((s) => !hiddenProbes.includes(s.id)),
@@ -958,7 +976,7 @@ export function NodeDetail({ node, showPeak, onBack }: {
               {/* Composed rather than an area chart, since swap is a second line
                   on the same axis. A hub without the field sends none of it and
                   only the area is drawn. */}
-              <ComposedChart data={metricRows} margin={{ top: 8, right: hasLoad ? LOAD_AXIS : 0 }}>
+              <ComposedChart data={metricRows} margin={{ top: 8, right: hasLoad || hasProcs ? LOAD_AXIS : 0 }}>
                 <CartesianGrid strokeDasharray="3 3" className="stroke-muted" vertical={false} />
                 <XAxis {...timeAxis(metricRows)} />
                 <YAxis domain={[0, memTop]} ticks={quarters(memTop)} tickFormatter={axisBytes} {...VALUE_AXIS} {...AXIS} />
@@ -999,7 +1017,7 @@ export function NodeDetail({ node, showPeak, onBack }: {
             }
           >
             <ResponsiveContainer>
-              <ComposedChart data={metricRows} margin={{ top: 8, right: hasLoad ? LOAD_AXIS : 0 }}>
+              <ComposedChart data={metricRows} margin={{ top: 8, right: hasLoad || hasProcs ? LOAD_AXIS : 0 }}>
                 <CartesianGrid strokeDasharray="3 3" className="stroke-muted" vertical={false} />
                 <XAxis {...timeAxis(metricRows)} />
                 <YAxis scale="log" {...axes.rate} tickFormatter={axisBytes} unit="/s" {...VALUE_AXIS} {...AXIS} />
@@ -1074,7 +1092,7 @@ export function NodeDetail({ node, showPeak, onBack }: {
             }
           >
             <ResponsiveContainer>
-              <AreaChart data={metricRows} margin={{ top: 8, right: hasLoad ? LOAD_AXIS : 0 }}>
+              <AreaChart data={metricRows} margin={{ top: 8, right: hasLoad || hasProcs ? LOAD_AXIS : 0 }}>
                 <CartesianGrid strokeDasharray="3 3" className="stroke-muted" vertical={false} />
                 <XAxis {...timeAxis(metricRows)} />
                 <YAxis domain={[0, node.disk_total]} ticks={quarters(node.disk_total)} tickFormatter={axisBytes} {...VALUE_AXIS} {...AXIS} />
@@ -1086,6 +1104,89 @@ export function NodeDetail({ node, showPeak, onBack }: {
                 <Wash id="disk-wash" color="var(--color-chart-1)" />
                 <Area dataKey="disk_used" name="硬盘" stroke="var(--color-chart-1)" fill="url(#disk-wash)" {...RESOURCE_SERIES} />
               </AreaChart>
+            </ResponsiveContainer>
+          </Panel>
+
+          {/* ⭐ **连接与进程** ✓✓ —— hub 23 → 24 那次迁移之后，历史行也带这三列了
+              （此前只有实时帧里有）。TCP 与 UDP 同轴（都是连接数，量级接近），
+              进程数走右轴：它通常几百，而连接数几十，同轴会把连接线压成贴地的一条 ——
+              与 CPU 那张给 load 开右轴同一个理由。
+              ⚠️ 老的小时行是 `null`（迁移前折出来的），所以线会**断开**而不是连成 0 ✓。 */}
+          <Panel
+            title="连接与进程"
+            value={
+              last && (
+                <Reading at={last.ts}>
+                  <span className="inline-flex flex-wrap items-center gap-x-2.5 gap-y-1">
+                    <HeaderSeries
+                      color="var(--color-chart-1)"
+                      name="TCP"
+                      value={last.tcp == null ? "—" : `${last.tcp}`}
+                    />
+                    <HeaderSeries
+                      color="var(--color-chart-4)"
+                      name="UDP"
+                      value={last.udp == null ? "—" : `${last.udp}`}
+                    />
+                    <HeaderSeries
+                      color="var(--color-chart-2)"
+                      name="进程"
+                      value={last.procs == null ? "—" : `${last.procs}`}
+                    />
+                  </span>
+                </Reading>
+              )
+            }
+          >
+            <ResponsiveContainer>
+              <ComposedChart data={metricRows} margin={{ top: 8, right: hasProcs ? LOAD_AXIS : 0 }}>
+                <CartesianGrid strokeDasharray="3 3" className="stroke-muted" vertical={false} />
+                <XAxis {...timeAxis(metricRows)} />
+                {/* ⚠️ `allowDecimals={false}`：连接数是整数，默认的刻度会给 11.25 这种。 */}
+                <YAxis
+                  yAxisId="conn"
+                  domain={[0, connTop]}
+                  allowDecimals={false}
+                  {...VALUE_AXIS}
+                  {...AXIS}
+                />
+                {hasProcs && (
+                  <YAxis
+                    yAxisId="procs"
+                    orientation="right"
+                    domain={[0, procsTop]}
+                    allowDecimals={false}
+                    width={LOAD_AXIS}
+                    {...AXIS}
+                  />
+                )}
+                <Tooltip
+                  wrapperStyle={WRAPPER} {...TOOLTIP}
+                  content={<ChartTooltip format={(n: number) => `${n}`} />}
+                  cursor={<Crosshair domainTop={connTop} format={(n: number) => `${n}`} />}
+                />
+                {hasTcp && (
+                  <>
+                    {/* ⚠️ 与上面四张同一个写法 ✓：**主序列走面积 + 渐变阴影**（`Wash`），
+                        其余序列走线 ✓。少了这层阴影，这一张在视觉上就"缺一块" ✗。 */}
+                    <Wash id="conn-wash" color="var(--color-chart-1)" />
+                    <Area
+                      yAxisId="conn"
+                      dataKey="tcp"
+                      name="TCP"
+                      stroke="var(--color-chart-1)"
+                      fill="url(#conn-wash)"
+                      {...SERIES}
+                    />
+                  </>
+                )}
+                {hasUdp && (
+                  <Line yAxisId="conn" dataKey="udp" name="UDP" stroke="var(--color-chart-4)" {...SERIES} />
+                )}
+                {hasProcs && (
+                  <Line yAxisId="procs" dataKey="procs" name="进程" stroke="var(--color-chart-2)" {...SERIES} />
+                )}
+              </ComposedChart>
             </ResponsiveContainer>
           </Panel>
         </div>
