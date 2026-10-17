@@ -5,7 +5,7 @@
 // strips the types itself, so this needs no runner or dependency.
 //
 // Nothing imports it, so the bundle never includes it.
-import { chipWidth, crosshairY, isInternalSeries } from "./chart.ts"
+import { chipWidth, crosshairY, isInternalSeries, rateCrosshair } from "./chart.ts"
 
 let failed = 0
 function eq(got: unknown, want: unknown, what: string) {
@@ -70,6 +70,16 @@ eq(isInternalSeries("s6"), false, "平滑序列 s6 不是")
 eq(isInternalSeries("rx_band"), false, "带宽图的 rx_band 不是")
 eq(isInternalSeries("ts"), false, "时间轴 ts 不是")
 eq(isInternalSeries(6), false, "数字键不是")
+
+// rateCrosshair: 峰值带排在最前时，取带的上沿 —— 否则横线与数值胶囊都不会出现。
+{
+  const band = { dataKey: "rx_band", value: [1_000, 2_400], stroke: "var(--color-chart-1)" }
+  const line = { dataKey: "rx", value: 1_024 }
+  eq(rateCrosshair([band, line]), { value: 2_400, stroke: "var(--color-chart-1)" }, "带在前 ⇒ 取上沿")
+  eq(rateCrosshair([line]), { value: 1_024 }, "没有带 ⇒ 退回第一条数值序列")
+  eq(rateCrosshair([{ dataKey: "x", value: "n/a" }]), null, "说不清就 null")
+  eq(rateCrosshair([]), null, "空 payload")
+}
 
 if (failed) {
   console.error(`\n${failed} 项不通过`)

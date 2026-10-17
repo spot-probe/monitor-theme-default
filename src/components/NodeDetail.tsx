@@ -14,6 +14,7 @@ import { AvailabilityCard } from "@/components/Availability"
 import { ChartTooltip, Crosshair, Swatch } from "@/components/ChartTooltip"
 import { Country, Status } from "@/components/NodeCard"
 import { api, useHistoryDays, type Node } from "@/lib/api"
+import { rateCrosshair } from "@/lib/chart"
 import { rangesFor } from "@/lib/ranges"
 import {
   axisBytes, axisTop, bytes, clockFor, despike, quarters, cpuName, cycle, FOREVER, money, osName, rate,
@@ -286,7 +287,6 @@ export function NodeDetail({ node, showPeak, onBack }: {
   // availability timeline reaches. A rung above it would draw a shorter chart than
   // the one that was picked, which reads as lost data rather than as a limit.
   const days = useHistoryDays()
-  const historyHours = days * 24
   const rangeOptions = rangesFor(days)
   // The latency chart stops at a day: a week-wide bucket still carries the spread
   // and the loss figure, but a week of probe history is outside this page's purpose.
@@ -356,9 +356,11 @@ export function NodeDetail({ node, showPeak, onBack }: {
       // 读失败就**说出来并给一次重试**：静默消失会让读者以为这台机器没有可用率数据。
       .catch(() => { if (active) setAvailFailed(true) })
     return () => { active = false }
-    // `historyHours` in the deps: it starts at the fallback week and becomes what
-    // the hub keeps once `/api/me` answers, and the bar must follow it.
-  }, [node.id, historyHours, availTry])
+    // ⚠️ **不要**把 `historyHours` 放进依赖 ✗✗：URL 里的窗口是固定的一周（这张卡就是
+    // 7 × 48 的日历），而 `/api/me` 回来后 `history_days` 会从回退值变成真实值 ⇒ 依赖变了
+    // 就得把**同一个 URL 再发一次**。实测：每开一个节点页会因此多发一次可用率 + 一次 /me，
+    // 而历史查询只有 4 个并发位。
+  }, [node.id, availTry])
 
   useEffect(() => {
     let active = true
@@ -1061,7 +1063,14 @@ export function NodeDetail({ node, showPeak, onBack }: {
                       }}
                     />
                   }
-                  cursor={<Crosshair domainTop={axes.rate.domain[1]} domainBottom={axes.rate.domain[0]} format={rate} />}
+                  cursor={
+                    <Crosshair
+                      domainTop={axes.rate.domain[1]}
+                      domainBottom={axes.rate.domain[0]}
+                      format={rate}
+                      pickValue={rateCrosshair}
+                    />
+                  }
                 />
                 {/* 均值到峰值那条带。一分钟的突发在一天的轴上不到一像素宽，只填色
                     看不见，所以上沿描一道虚线；虚线而不是淡边，是因为两条速率靠色

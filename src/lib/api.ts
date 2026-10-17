@@ -161,6 +161,17 @@ export function safeNodes(nodes: Node[]): Node[] {
  * Live node list. Uses the WebSocket the hub pushes every two seconds, falling
  * back to polling if it cannot be established.
  */
+/**
+ * 一次重连要等多久：1s 起、翻倍、封顶 30s，并带**一半的抖动**。
+ *
+ * 抖动不是审美：hub 重启时所有标签页同时失去连接，固定间隔会让它们踩着同一拍回去，
+ * 把刚起来的 hub 再拍一次。`rand` 可注入，用例才不必依赖随机数。
+ */
+export function reconnectDelay(attempt: number, rand: () => number = Math.random): number {
+  const base = Math.min(30_000, 1_000 * 2 ** attempt)
+  return base / 2 + rand() * (base / 2)
+}
+
 export function useNodes() {
   const [nodes, setNodes] = useState<Node[] | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -184,6 +195,9 @@ export function useNodes() {
     let socket: WebSocket | null = null
     let poll: ReturnType<typeof setInterval> | null = null
     let retry: ReturnType<typeof setTimeout> | null = null
+    // 重连退避：见 `reconnectDelay`。`attempt` 在连上时归零。
+    let attempt = 0
+    const backoff = () => reconnectDelay(attempt++)
     // ⚠️ 卸载标志。这里**曾经同名遮蔽**了外层的 `closed` 状态（公开页被关掉之后
     // 不再重连的那个标志），于是 `onclose` 里的 `if (closed) return` 读的永远是
     // 这个局部变量 —— 那条"401 之后别再重连"的承诺从来没生效，标签页会每 5 秒
@@ -234,7 +248,7 @@ export function useNodes() {
       } catch {
         // 构造函数抛异常（URL 非法之类）：别把这一页永久留成轮询，但也别什么都不做。
         poll ??= setInterval(fetchOnce, 5000)
-        retry = setTimeout(connect, 5000)
+        retry = setTimeout(connect, backoff())
         return
       }
       socket.onmessage = (event) => {
@@ -259,6 +273,8 @@ export function useNodes() {
         }
       }
       socket.onopen = () => {
+        // 连上了 ⇒ 退避归零，下一次断开从 1 秒重新开始。
+        attempt = 0
         setLive(true)
         // ⚠️ **连上就把轮询停掉** ✓ —— 放在 `onmessage` 里时，一个安静的集群（快照没变
         // hub 就不发包）会让轮询继续跑几十秒，而那期间 WS 明明已经通了。
@@ -277,7 +293,7 @@ export function useNodes() {
         // 401 之后重连没有意义。
         if (unauthorized) return
         poll ??= setInterval(fetchOnce, 5000)
-        retry = setTimeout(connect, 5000)
+        retry = setTimeout(connect, backoff())
       }
     }
     connect()

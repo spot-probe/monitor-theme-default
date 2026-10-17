@@ -54,7 +54,7 @@ export function TooltipCard({ title, rows }: { title: string; rows: Row[] }) {
 }
 
 /** What recharts hands a custom `content`, as much of it as this page reads. */
-type PayloadItem = {
+export type PayloadItem = {
   name?: string | number
   value?: number | string | null
   stroke?: string
@@ -155,9 +155,13 @@ type CursorPoint = { x: number; y: number }
  * render recharts was doing anyway rather than from a `mousemove` handler that
  * would re-render a chart held at seven hundred points per series.
  *
- * The horizontal line follows the *first* series, which is the one the panel is
- * about -- memory before swap, download before upload -- and the chip carries
- * that series' hue, so the line says which of the two it is measuring.
+ * The horizontal line follows the *first* numeric series by default, which is the
+ * one the panel is about -- memory before swap, download before upload -- and the
+ * chip carries that series' hue, so the line says which of the two it is measuring.
+ *
+ * ⚠️ 但"第一条"并不总是可算的那条 ✗✗：速率图的 payload 里第一条是**峰值带**
+ * （`rx_band`，值是 `[均值, 峰值]` 数组），于是横线与数值胶囊**都不会出现**。
+ * 那种面板用 `pickValue` 自己挑：它还能顺手绕开"线的值被抬到地板之后"的问题。
  *
  * `domainTop` is the axis top the panel pinned its plot to, and it is what makes
  * the horizontal line possible: the cursor is not given a scale, but a
@@ -167,6 +171,7 @@ type CursorPoint = { x: number; y: number }
 export function Crosshair({
   points,
   payload,
+  pickValue,
   domainTop,
   domainBottom = 0,
   format,
@@ -179,6 +184,8 @@ export function Crosshair({
 }: {
   points?: CursorPoint[]
   payload?: PayloadItem[]
+  /** 从 payload 里挑出"这一列该显示的那个数"（含它的颜色）。默认取第一条数值序列。 */
+  pickValue?: (payload: PayloadItem[]) => { value: number; stroke?: string } | null
   domainTop?: number
   /** 对数轴的底 ✓（0 ⇒ 线性 ✓）。速率图非 0 ⇒ 高度按对数比例分 ✓。 */
   domainBottom?: number
@@ -193,7 +200,10 @@ export function Crosshair({
   const x = points?.[0]?.x
   if (x === undefined) return null
   const series = payload?.[0]
-  const value = typeof series?.value === "number" ? series.value : null
+  const picked = pickValue?.(payload ?? [])
+  const value = picked ? picked.value : typeof series?.value === "number" ? series.value : null
+  // 颜色跟着被选中的那条走，否则速率图的横线会用峰值带的色去指一条均值线。
+  const stroke = picked?.stroke ?? series?.stroke ?? "var(--color-muted-foreground)"
   const y =
     value === null || domainTop === undefined ? null : crosshairY(value, domainTop, height, domainBottom)
   const text = y === null || value === null || !format ? "" : format(value)
@@ -219,7 +229,7 @@ export function Crosshair({
             y1={top + y}
             x2={left + width}
             y2={top + y}
-            stroke={series?.stroke ?? "var(--color-muted-foreground)"}
+            stroke={stroke}
             strokeOpacity={0.55}
             strokeDasharray="4 4"
           />

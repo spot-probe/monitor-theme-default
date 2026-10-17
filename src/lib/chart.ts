@@ -66,6 +66,26 @@ export function chipWidth(text: string): number {
  * 形态写死成"**一个 b 或 c + 一串数字**"，是为了不误伤正常序列（`t6`、`s6`、`l6`、
  * `rx_band`、`ts` 都不匹配）。两端的约定由 `chart.test.ts` 钉住。
  */
+/**
+ * 速率图的十字线该读哪个数。
+ *
+ * payload 里第一条是**峰值带**（`rx_band`，值是 `[均值, 峰值]` 数组）—— 拿它算不出 y，
+ * 于是横线和数值胶囊都不会出现；而线的值是被抬到每秒 1 KiB 地板之后的数（200 B/s 会被
+ * 印成 1 KB/s）。取带的上沿：那是这一段真正的峰值，也是这张图想说的东西。
+ * 没有带（`chart_peak` 关着、或老 hub 不给峰值）时退回第一条数值序列。
+ */
+export function rateCrosshair(
+  payload: { dataKey?: unknown; value?: unknown; stroke?: string }[],
+): { value: number; stroke?: string } | null {
+  const band = payload.find((p) => String(p.dataKey) === "rx_band")
+  const range = band?.value
+  if (Array.isArray(range) && typeof range[1] === "number") {
+    return { value: range[1], stroke: band?.stroke }
+  }
+  const line = payload.find((p) => typeof p.value === "number")
+  return typeof line?.value === "number" ? { value: line.value, stroke: line.stroke } : null
+}
+
 export function isInternalSeries(key: unknown): boolean {
   return typeof key === "string" && /^[bc]\d+$/.test(key)
 }
