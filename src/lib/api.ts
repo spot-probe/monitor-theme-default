@@ -169,6 +169,11 @@ export function useNodes() {
   // silently stops updating shows yesterday's numbers with today's confidence.
   const [updatedAt, setUpdatedAt] = useState(0)
   const [live, setLive] = useState(false)
+  // ⚠️ **"最近一次收到"与"最近一次内容变化"是两件事** ✗✗：hub 在内容没变时不推快照
+  // （空闲机群上这是常态），所以 `updatedAt` 回答不了"连接还活着吗"。hub 每 10 秒发一条
+  // 心跳帧，用它判新鲜；`beatSeen` 让不认识心跳的旧 hub 保持原来的行为（socket 开着就算活）。
+  const [lastSeen, setLastSeen] = useState(0)
+  const [beatSeen, setBeatSeen] = useState(false)
   // Set when the hub answers 401: the status page has been closed to anonymous
   // callers since this tab loaded. The hub also ends the stream, so this surfaces
   // on the fallback fetch the reconnect starts; a close allows a client to
@@ -186,6 +191,10 @@ export function useNodes() {
     let disposed = false
     // 401：公开页在本标签页打开之后被关掉了。重连与轮询都没有意义（再问还是 401）。
     let unauthorized = false
+    // 最近一次收到任何帧的时刻，以及"这个 hub 会不会发心跳"。
+    // 后者决定下面那个看门要不要生效：旧 hub 不心跳，安静时几十秒没有帧是**正常**的。
+    const seen = { current: 0 }
+    let beats = false
 
     const receive = (list: Node[]) => {
       const safe = safeNodes(list)
@@ -230,14 +239,24 @@ export function useNodes() {
       }
       socket.onmessage = (event) => {
         // ⚠️ 一帧解析失败不能把这条流弄死：跳过这一帧，等下一帧。
-        let list: unknown
+        let frame: { nodes?: unknown; beat?: unknown }
         try {
-          list = JSON.parse(event.data).nodes
+          frame = JSON.parse(event.data)
         } catch {
           return
         }
-        if (!Array.isArray(list)) return
-        receive(list as Node[])
+        // 任何一帧都证明连接还活着。
+        seen.current = Date.now()
+        setLastSeen(seen.current)
+        if (Array.isArray(frame.nodes)) {
+          receive(frame.nodes as Node[])
+          return
+        }
+        // 心跳帧：只更新"还活着"，不动数据。
+        if (typeof frame.beat === "number") {
+          beats = true
+          setBeatSeen(true)
+        }
       }
       socket.onopen = () => {
         setLive(true)
@@ -263,13 +282,23 @@ export function useNodes() {
     }
     connect()
 
+    // ⚠️ **半开的连接不会自己死** ✗✗：中间盒静默丢弃之后，TCP 可能几十分钟才超时，
+    // 而 socket 一直是 open ⇒ 页面不重连、只是数字停住。既然 hub 每 10 秒发心跳，
+    // 那 60 秒一帧都没有就是"这条连接已经没用了" ⇒ 关掉它，让 onclose 里的重连接管。
+    // 只在对方确实会心跳时启用（`beats`），否则安静机群会被误杀。
+    const watchdog = setInterval(() => {
+      if (!beats || seen.current === 0) return
+      if (Date.now() - seen.current > 60_000) socket?.close()
+    }, 15_000)
+
     return () => {
       disposed = true
+      clearInterval(watchdog)
       socket?.close()
       if (poll) clearInterval(poll)
       if (retry) clearTimeout(retry)
     }
   }, [])
 
-  return { nodes, error, closed, updatedAt, live }
+  return { nodes, error, closed, updatedAt, live, lastSeen, beatSeen }
 }

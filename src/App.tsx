@@ -120,15 +120,42 @@ function useView(fallback: View) {
  * this?" at a glance; the disconnect case keeps the last time, because knowing
  * *when* it stopped is the useful part then.
  */
-function Live({ live, updatedAt }: { live: boolean; updatedAt: number }) {
+function Live({
+  live,
+  updatedAt,
+  lastSeen,
+  beatSeen,
+}: {
+  live: boolean
+  updatedAt: number
+  lastSeen: number
+  beatSeen: boolean
+}) {
+  // ⚠️ socket 开着**不等于**数据是新的：一条半开的连接（中间盒静默丢弃）会让页面一直
+  // 亮着绿灯，而数字停在半小时前。hub 每 10 秒发心跳 ⇒ 30 秒没收到就转黄。
+  // `beatSeen` 为假（旧 hub 不心跳）时保持原行为，不去猜。
+  const [now, setNow] = useState(Date.now())
+  useEffect(() => {
+    if (!live) return
+    const id = setInterval(() => setNow(Date.now()), 5_000)
+    return () => clearInterval(id)
+  }, [live])
+  const stale = beatSeen && lastSeen > 0 && now - lastSeen > 30_000
+  const calm = live && !stale
   const time = updatedAt ? new Date(updatedAt).toLocaleTimeString("zh-CN", { hour12: false }) : ""
   return (
     <span
       className={cn(
         "inline-flex items-center gap-1.5 text-xs whitespace-nowrap",
-        live ? "text-muted-foreground" : "text-warn-fg",
+        calm ? "text-muted-foreground" : "text-warn-fg",
       )}
-      title={live ? "数据由 hub 实时推送" : "实时推送已断开，正在重连；期间每 5 秒轮询一次"}
+      title={
+        calm
+          ? "数据由 hub 实时推送"
+          : live
+            ? "连接还在，但已经 30 秒没有收到 hub 的心跳"
+            : "实时推送已断开，正在重连；期间每 5 秒轮询一次"
+      }
     >
       {/* The header has no room for the sentence on a phone, but the dot is the
           part that carries the alarm -- a page that stopped updating must not
@@ -136,10 +163,10 @@ function Live({ live, updatedAt }: { live: boolean; updatedAt: number }) {
           accessibility tree there, so nothing is lost to a screen reader. */}
       <span
         aria-hidden
-        className={cn("size-1.5 shrink-0 rounded-full max-sm:size-2", live ? "bg-online" : "bg-warn")}
+        className={cn("size-1.5 shrink-0 rounded-full max-sm:size-2", calm ? "bg-online" : "bg-warn")}
       />
       <span className="max-sm:sr-only">
-        {live ? `更新于 ${time}` : updatedAt ? `已断开 · 最后更新 ${time}` : "连接中…"}
+        {calm ? `更新于 ${time}` : updatedAt ? `已断开 · 最后更新 ${time}` : "连接中…"}
       </span>
     </span>
   )
@@ -149,7 +176,7 @@ export default function App() {
   const [dark, toggleTheme] = useTheme()
   const [me, setMe] = useState<Me | null>(null)
   const [meError, setMeError] = useState("")
-  const { nodes, error, closed, updatedAt, live } = useNodes()
+  const { nodes, error, closed, updatedAt, live, lastSeen, beatSeen } = useNodes()
   // The operator's settings, from the theme's own manifest defaults. Held until
   // read so the list is not drawn once with the summary and once without it.
   const [config, setConfig] = useState<Record<string, unknown> | null>(null)
@@ -320,7 +347,7 @@ export default function App() {
               pushed the two of them around as the timestamp changed width; on the
               right it lines up with the controls it belongs with, and the brand
               keeps the left edge to itself. */}
-          <Live live={live} updatedAt={updatedAt} />
+          <Live live={live} updatedAt={updatedAt} lastSeen={lastSeen} beatSeen={beatSeen} />
           {/* The panel is a separate app built into the hub, not part of this
               theme, so this is a navigation rather than a route. */}
           <Button variant="ghost" size="sm" asChild>
