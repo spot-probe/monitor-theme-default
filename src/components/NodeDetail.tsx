@@ -514,6 +514,11 @@ export function NodeDetail({ node, showPeak, onBack }: {
   )
   // Keyed on the full list, so a line keeps its shade when others are hidden.
   const style = (id: number) => PALETTE[pingSeries.findIndex((p) => p.id === id) % PALETTE.length]
+  // ⚠️ 颜色**不是唯一的区分手段** ✗✗：五条线用五个色相，但对色觉障碍的读者它们可能一样。
+  // 线型是第二编码 —— 实线 / 长虚 / 点线 / 点划 / 短虚，与颜色一一对应（同一个序号）。
+  // 这不是退回"靠虚线区分"：颜色仍然在，只是不再独自承担这件事。
+  const DASHES = ["none", "6 3", "2 3", "8 3 2 3", "4 4"]
+  const dash = (id: number) => DASHES[pingSeries.findIndex((p) => p.id === id) % DASHES.length]
 
   // The hub stamps every sample with its bucket rather than the second the probe
   // finished, so probes reporting at the bucket's rate share rows instead of each
@@ -833,6 +838,7 @@ export function NodeDetail({ node, showPeak, onBack }: {
                         dataKey={`${smooth ? "s" : "t"}${s.id}`}
                         name={s.name}
                         stroke={style(s.id)}
+                        strokeDasharray={dash(s.id)}
                         {...SERIES}
                         connectNulls
                       />
