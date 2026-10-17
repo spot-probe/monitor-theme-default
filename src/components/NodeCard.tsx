@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge"
 import { Card } from "@/components/ui/card"
 import { Meter } from "@/components/Meter"
 import type { Node } from "@/lib/api"
-import { bytes, cycle, daysUntil, FOREVER, money, osName, pair, percent, rate, uptime } from "@/lib/format"
+import { bytes, cycle, expiryDays, FOREVER, money, osName, pair, percent, rate, uptime } from "@/lib/format"
 import { cn } from "@/lib/utils"
 
 // Emitted as files and fetched on first use, so a page carries only the flags its
@@ -226,7 +226,7 @@ function trafficFoot(node: Node) {
 // expired for hours before that. Only a hub from before `expires_in` leaves the
 // count to the browser.
 function Expiry({ node }: { node: Node }) {
-  const days = node.expires_in !== undefined ? node.expires_in : daysUntil(node.expires_at)
+  const days = expiryDays(node.expires_in, node.expires_at)
   if (days === null)
     return (
       <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground" title="永不到期">

@@ -1,6 +1,7 @@
 import { Activity, ArrowDown, ArrowDownUp, ArrowUp, Gauge, Server } from "lucide-react"
 
 import { Card } from "@/components/ui/card"
+import { deployed } from "@/lib/group"
 import { speedHistory, type Node } from "@/lib/api"
 import { bytes, rate } from "@/lib/format"
 import { cn } from "@/lib/utils"
@@ -124,7 +125,9 @@ export function Summary({ nodes, filtering, onFilter, onOpen }: {
   onOpen: (node: Node) => void
 }) {
   const online = nodes.filter((n) => n.online)
-  const offline = nodes.length - online.length
+  // ⚠️ 「离线」必须与筛选**同一个定义**：从未连上的节点是「未接入」（`deployed` 为假），
+  // 不是掉线。此前用 `length - online`，于是 tile 红字写着"2 个离线"、点进去是空列表。
+  const offline = nodes.filter((n) => !n.online && deployed(n)).length
   const sum = (pick: (n: Node) => number) => nodes.reduce((total, n) => total + pick(n), 0)
 
   // The busiest node rather than the average: one machine at 95% is what matters,

@@ -151,12 +151,14 @@ const LOAD_AXIS = 36
 // Blue, then violet, then cyan: the three probes most fleets run should be the
 // three easiest to tell apart. Green, amber and red are absent on purpose -- those
 // three mean state on this page, so a probe drawn in amber reads as a warning.
+// ⚠️ 每个探测一个颜色：此前第 3 个与第 1 个、第 4 个与第 2 个**同色**，而图例正是靠色块
+// 区分的（虚线也因此被去掉）⇒ 3 个探测时读者分不清哪条线是哪个探测。
 const PALETTE = [
   "var(--color-chart-1)",
   "var(--color-chart-4)",
-  "var(--color-chart-1)",
-  "var(--color-chart-4)",
   "var(--color-chart-2)",
+  "var(--color-chart-3)",
+  "var(--color-chart-5)",
 ]
 
 const TABS = [
@@ -1030,7 +1032,9 @@ export function NodeDetail({ node, showPeak, onBack }: {
                       format={rate}
                       pick={(item) => item.payload?.[`net_${String(item.dataKey)}`] as number | undefined}
                       hint={(item) => {
-                        const max = item.payload?.[item.dataKey === "net_rx" ? "net_rx_max" : "net_tx_max"]
+                        // ⚠️ 两条线的 dataKey 是 `rx` / `tx`，**不是** `net_rx` —— 旧写法
+                        // 恒假，于是下行那行的「本段峰值」一直是上行峰值。
+                        const max = item.payload?.[`net_${String(item.dataKey)}_max`]
                         return peak && typeof max === "number" ? `本段峰值 ${rate(max)}` : undefined
                       }}
                     />

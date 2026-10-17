@@ -1,6 +1,9 @@
 import type { Node } from "@/lib/api"
-import { daysUntil } from "@/lib/format"
+import { expiryDays } from "@/lib/format"
+// `deployed` 定义在卡片里（"未接入"这个说法本来就属于展示层）；这里转出去一层，
+// 免得取筛选谓词的地方都得知道它住在哪个组件里。
 import { deployed } from "@/components/NodeCard"
+export { deployed }
 
 /**
  * Group tabs.
@@ -46,7 +49,7 @@ export const FILTERS: {
 ]
 
 function within(node: Node, from: number | null, to: number): boolean {
-  const days = daysUntil(node.expires_at)
+  const days = expiryDays(node.expires_in, node.expires_at)
   if (days === null) return false
   return from === null ? days < 0 : days >= from && days <= to
 }

@@ -3,7 +3,7 @@ import { ArrowDown, ArrowUp, ArrowUpDown } from "lucide-react"
 
 import { Country, StatusDot, monthUsage, statusLabel } from "@/components/NodeCard"
 import type { Node } from "@/lib/api"
-import { cycle, FOREVER, bytes, daysUntil, money, osName, pair, percent, rate } from "@/lib/format"
+import { cycle, expiryDays, FOREVER, bytes, money, osName, pair, percent, rate } from "@/lib/format"
 import { cn } from "@/lib/utils"
 
 type SortKey = "name" | "cpu" | "mem" | "disk" | "traffic" | "expiry"
@@ -139,7 +139,7 @@ function Bar({ pct }: { pct: number | null }) {
 }
 
 function Expiry({ node }: { node: Node }) {
-  const days = daysUntil(node.expires_at)
+  const days = expiryDays(node.expires_in, node.expires_at)
   if (days === null) return <span className="text-xs text-muted-foreground">{FOREVER}</span>
   return (
     <span
@@ -165,7 +165,7 @@ function rank(node: Node, key: SortKey): number | null {
     case "traffic":
       return monthUsage(node)
     case "expiry":
-      return daysUntil(node.expires_at)
+      return expiryDays(node.expires_in, node.expires_at)
     default:
       return null
   }

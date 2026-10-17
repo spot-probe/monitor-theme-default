@@ -4,7 +4,7 @@
 //
 // Nothing imports it, so the bundle never includes it.
 import {
-  axisBytes, axisTop, bytes, cpuName, cycle, daysUntil, despike, money, osName, pair, quarters, rateAxis,
+  axisBytes, axisTop, bytes, cpuName, cycle, daysUntil, despike, expiryDays, money, osName, pair, quarters, rateAxis,
   RATE_FLOOR, tickClock, timeTicks, uptime,
 } from "./format.ts"
 
@@ -99,6 +99,13 @@ eq(quarters(axisTop(25_000_000, 4, 25_000_001)).length, 5, "四条网格线，�
   eq(daysUntil(at(-3)), -3, "已过期为负")
   eq(daysUntil(null), null, "无到期日")
   eq(daysUntil("不是日期"), null, "无法解析的日期")
+
+  // expiryDays: hub 的日历优先 —— 卡片、表格、筛选必须用**同一个**数字。
+  // `0`（今天到期）是有效值，不能因为"看起来像没给"就退回访客时钟。
+  eq(expiryDays(3, at(10)), 3, "有 expires_in 就用它，与访客时钟无关")
+  eq(expiryDays(0, at(10)), 0, "0 是有效值（今天到期）")
+  eq(expiryDays(undefined, at(10)), 10, "旧 hub 没有这个字段 ⇒ 退回 daysUntil")
+  eq(expiryDays(null, at(-2)), -2, "null 也退回")
 }
 
 eq(uptime(0), "—", "没上报过就不写时长")

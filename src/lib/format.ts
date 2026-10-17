@@ -68,6 +68,18 @@ export function uptime(seconds: number): string {
   return `${m} 分`
 }
 
+/**
+ * 到期天数：**优先用 hub 自己的日历**。
+ *
+ * `expires_in` 是 hub 按它的本地日历算好的，所以每个访客看到同一个数；而 `daysUntil` 用
+ * 访客的时钟与时区，于是同一台机器在表格/筛选里与在卡片里会差一天，本机时钟不准时还会把
+ * 没到期的节点筛进「已过期」。只有不认识这个字段的旧 hub 才退回浏览器自己算。
+ */
+export function expiryDays(expiresIn: number | null | undefined, expiresAt: string | null): number | null {
+  // `??` 而不是 truthy 判断：`0`（今天到期）是有效值，不能被当成"没给"。
+  return expiresIn ?? daysUntil(expiresAt)
+}
+
 /** Whole days until a date, negative once it has passed. */
 export function daysUntil(date?: string | null): number | null {
   if (!date) return null
