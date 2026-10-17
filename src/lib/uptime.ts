@@ -150,6 +150,20 @@ function midnightOf(secs: number): number {
 }
 
 /**
+ * 返回的数据明显短于请求的窗口时，给一句实话；否则空串。
+ *
+ * 标签写的是**请求**的 `hours`，而 hub 可能只给得出一部分 —— 节点才活了三天、或者保留期
+ * 在那之后被调小。图上的 x 轴是按数据首尾画的，所以不提示的话，chip 写着「90 天」而图上
+ * 只有三天，读起来就是"数据丢了"。差得多才说（一成以上），边缘裁剪不吵人。
+ */
+export function spanHint(points: { ts: number }[], hours: number): string {
+  if (points.length < 2) return ""
+  const from = points[0].ts
+  const to = points[points.length - 1].ts
+  return to - from < hours * 3_600 * 0.9 ? `实际只画到 ${windowLabel(from, to)}` : ""
+}
+
+/**
  * 把逐桶的可用率摆成 7 行 × 48 列的日历格，**行是日期、从上到下时间递增** ✓。
  *
  * ⚠️ 行**不是星期** ✗ —— 这一点踩过坑：窗口是"最近 7 个自然日"，它跨**两个**周一至
@@ -166,15 +180,28 @@ function midnightOf(secs: number): number {
  */
 export function calendarCells(data: Availability): Cell[] {
   const cells: Cell[] = []
-  const today = midnightOf(data.to)
-  const first = today - (ROWS - 1) * 86_400
+  // ⚠️ 每一行的基准都取**本地零点**，不要用 `today - n * 86_400` ✗✗：夏令时切换那一周，
+  // 加减 86400 秒会落到本地 23:00 或 01:00 —— 行日期差一小时，而空档/离线期间没有桶来
+  // 纠正格子的 `ts`，于是那些行的日期与提示会指错一天（有数据的格子会被桶时间盖回去，
+  // 所以健康节点看不出来，这正是它难被发现的原因）。
+  const dayStart = (offset: number) => {
+    const d = new Date(midnightOf(data.to) * 1_000)
+    d.setDate(d.getDate() + offset)
+    d.setHours(0, 0, 0, 0)
+    return Math.floor(d.getTime() / 1_000)
+  }
+  const starts: number[] = []
+  for (let row = 0; row < ROWS; row++) starts.push(dayStart(row - (ROWS - 1)))
   for (let row = 0; row < ROWS; row++)
     for (let slot = 0; slot < SLOTS_PER_DAY; slot++)
-      cells.push({ row, slot, ts: first + row * 86_400 + slot * SLOT_HOURS * 3_600, tone: "unknown", n: 0, m: 0 })
+      cells.push({ row, slot, ts: starts[row] + slot * SLOT_HOURS * 3_600, tone: "unknown", n: 0, m: 0 })
   const width = SLOT_HOURS * 3_600
   // 只保留这 7 个自然日之内的桶（请求的 168 小时会多出前一天的尾巴）。
-  const start = first
-  const end = first + ROWS * 86_400
+  const start = starts[0]
+  const end = dayStart(1)
+  // 日期 → 行号：用**本地日期**查表，而不是 `Math.round((day - first) / 86400)`（同一个 DST 毛病）。
+  const rowOf = new Map<number, number>()
+  for (let row = 0; row < ROWS; row++) rowOf.set(starts[row], row)
   const bucketSecs =
     data.buckets.length > 1 ? Math.max(60, data.buckets[1].ts - data.buckets[0].ts) : 3_600
   // ⚠️ **一个桶可能比一格宽** ✗✗：旧 hub 不认识 `slot=1800`，仍按小时分桶 ⇒ 一个 1 小时的桶
@@ -185,9 +212,8 @@ export function calendarCells(data: Availability): Cell[] {
   for (const b of data.buckets) {
     for (let ts = b.ts; ts < b.ts + bucketSecs; ts += width) {
       if (ts < start || ts >= end) continue
-      const day = midnightOf(ts)
-      const row = Math.round((day - first) / 86_400)
-      if (row < 0 || row >= ROWS) continue
+      const row = rowOf.get(midnightOf(ts))
+      if (row === undefined) continue
       const d = new Date(ts * 1_000)
       const minutes = d.getHours() * 60 + d.getMinutes()
       const cell = cells[row * SLOTS_PER_DAY + Math.floor(minutes / (SLOT_HOURS * 60))]

@@ -20,7 +20,7 @@ import {
   rateAxis, RATE_FLOOR,
   stamp, tickClock, timeTicks,
 } from "@/lib/format"
-import type { Availability } from "@/lib/uptime"
+import { spanHint, type Availability } from "@/lib/uptime"
 
 type Point = {
   ts: number
@@ -307,6 +307,13 @@ export function NodeDetail({ node, showPeak, onBack }: {
   // the connection the agents report through. Rendered as an empty window, a 503
   // would misdirect the reader.
   const [failed, setFailed] = useState("")
+  // ⚠️ 标签写的是**请求**的窗口，而 hub 可能只给得出一部分（节点才活了三天、或者保留期
+  // 在那之后被调小）—— 图上的 x 轴是按数据首尾画的 ⇒ 不说一句的话，chip 写着「90 天」
+  // 而图只有 3 天，读起来就是"数据丢了"。差得多才提示，边缘裁剪不吵人。
+  const span = useMemo(
+    () => (data ? spanHint(tab === "latency" ? data.ping : data.metrics, hours) : ""),
+    [data, tab, hours],
+  )
   // Where the brush has been dragged, so the axis reticks for the visible span
   // rather than retaining the whole window's ticks.
   const [zoom, setZoom] = useState<[number, number] | null>(null)
@@ -681,6 +688,7 @@ export function NodeDetail({ node, showPeak, onBack }: {
           onChange={(next) => setRanges((all) => ({ ...all, [tab]: next }))}
           items={offers(tab).map((r) => ({ value: r.hours, label: r.label }))}
         />
+        {span && <span className="text-xs text-muted-foreground">{span}</span>}
         {tab === "latency" && (
           <label className="flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground">
             <input

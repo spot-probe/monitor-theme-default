@@ -7,7 +7,7 @@
 // Nothing imports it, so the bundle never includes it.
 import {
   availabilityText, missingMinutes, minuteLabel, outageLength, segmentSpan, segmentText,
-  calendarCells, segmentTone, stillDown, TONE_LABEL, windowLabel, type Incident, type Segment,
+  calendarCells, segmentTone, spanHint, stillDown, TONE_LABEL, windowLabel, type Incident, type Segment,
 } from "./uptime.ts"
 
 let failed = 0
@@ -17,6 +17,19 @@ function eq(got: unknown, want: unknown, what: string) {
     failed++
     console.error(`✗ ${what}\n    得到 ${a}\n    期望 ${b}`)
   }
+}
+
+// spanHint: 数据明显短于请求的窗口时说出来；够长就不说。
+{
+  const hour = 3_600
+  const pts = (spanHours: number) => [
+    { ts: 1_700_000_000 },
+    { ts: 1_700_000_000 + spanHours * hour },
+  ]
+  eq(spanHint(pts(90), 90) === "", true, "整窗口都给到了 ⇒ 不说话")
+  eq(spanHint(pts(80), 90) !== "", true, "八成就提示（差一成以上）")
+  eq(spanHint(pts(3), 90).includes("3"), true, "提示里带上实际跨度")
+  eq(spanHint(pts(3).slice(0, 1), 90), "", "一个点算不出跨度 ⇒ 不说")
 }
 
 // windowLabel: derived from the window, never from the nominal span. The hub
