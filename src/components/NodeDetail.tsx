@@ -288,10 +288,11 @@ export function NodeDetail({ node, showPeak, onBack }: {
   // the one that was picked, which reads as lost data rather than as a limit.
   const days = useHistoryDays()
   const rangeOptions = rangesFor(days)
-  // The latency chart stops at a day: a week-wide bucket still carries the spread
-  // and the loss figure, but a week of probe history is outside this page's purpose.
-  const offers = (key: string) =>
-    key === "latency" ? rangeOptions.filter((r) => r.hours <= 24) : rangeOptions
+  // ⚠️ 延迟页此前**只给到一天** ✗：那是我当初的判断（"一周的探测历史不是这一页的用途"）。
+  // 但 hub 会保留 7 天逐分钟、更久的是每小时中位数，而资源页早就能选到保留期 —— 同一页
+  // 两个页签给的上限不一致，读者只会以为"延迟只有一天的历史"。
+  // 现在两个页签共用同一份档位（都从 `history_days` 推出来）：能看多远由 hub 决定。
+  const offers = () => rangeOptions
   // Each tab keeps its own range: a 7-day trend and a 1-hour trace answer
   // different questions.
   const [ranges, setRanges] = useState({ resources: 6, latency: 6 })
@@ -688,7 +689,7 @@ export function NodeDetail({ node, showPeak, onBack }: {
           label="时间范围"
           value={hours}
           onChange={(next) => setRanges((all) => ({ ...all, [tab]: next }))}
-          items={offers(tab).map((r) => ({ value: r.hours, label: r.label }))}
+          items={offers().map((r) => ({ value: r.hours, label: r.label }))}
         />
         {span && <span className="text-xs text-muted-foreground">{span}</span>}
         {tab === "latency" && (
