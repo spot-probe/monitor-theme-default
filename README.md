@@ -78,17 +78,24 @@ npm version --no-git-tag-version 1.7.2   # 前两处
 
 | 接口 | 用途 |
 |---|---|
-| `GET /api/me` | 站点名、登录状态、公开页开关 |
+| `GET /api/me` | 站点名、登录状态、公开页开关、`history_days`（hub 保留多少天） |
 | `GET /api/nodes` | 节点列表、实时指标和累计流量 |
-| `GET /api/nodes/{id}/metrics` | 历史指标和延迟记录 |
+| `GET /api/nodes/{id}/metrics` | 历史指标、延迟记录、可用率日历 |
 | `GET /api/ws` | 每 2 秒推送一次节点快照的 WebSocket |
+| `GET /api/themes/{short}/config` | 这个主题自己的设置项（匿名条件与 `/api/nodes` 相同） |
+| `GET /site-icon/{tab,apple,og}` | 站点图标；站长没设置时 302 到主题自带的 `/favicon.svg`、`/apple-touch-icon.png`、`/og.png` |
 
-`metrics` 的三个查询参数都可省：
+后两个不在「四个接口」里，但参考实现自己在用：主题的设置项要能声明与读取，页头与
+`index.html` 的图标要走站点设置，否则站长在后台换了图标、页面不跟着变。
 
-- `hours=N` 窗口宽度。**匿名上限 168，登录后 2160**，超出静默 clamp——降采样限的是响应行数，这个
-  上限限的是 hub 扫描多少行
+`metrics` 的查询参数都可省：
+
+- `hours=N` 窗口宽度。**上限是 hub 自己的保留期**（`history_days × 24`），匿名与登录**同一套**
+  —— 超出静默 clamp。想画多宽就先读 `/api/me` 的 `history_days`，别自己写死。
 - `points=W` 调用方画得下的点数，只会让 hub 抽得更稀，不会更密
-- `series=metrics|ping` 只取要画的那一半，省掉的那半原本占响应的三分之一到三分之二
+- `series=metrics|ping|availability` 只取要画的那部分，省掉的部分原本占响应的大半
+- `slot=S` 可用率分桶宽度（秒）。**旧 hub 会忽略它**并按小时分桶——画格子时按返回桶的真实
+  宽度切分，否则一格会算到整小时的分钟数
 
 探测曲线的名字在响应的 `probes` 里随样本一起下发，匿名可读，所以画延迟图不需要第二个请求，也不
 需要管理员身份。

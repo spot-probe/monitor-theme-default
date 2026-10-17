@@ -376,8 +376,10 @@ export default function App() {
                 the list it acts on, so the page's own rhythm between sections
                 would read as a break the toolbar is not. */}
             <div className="mt-2.5 space-y-2.5">
+              {/* ⚠️ chips 的计数要**跟着搜索与分组走**（`filtered`），而不是全集：
+                  否则搜出 2 台之后，chip 仍写着「高负载 5」，点下去却只剩 1 台。 */}
               <Toolbar
-                nodes={sorted}
+                nodes={filtered}
                 counts={{ shown: filtered.length, total: sorted.length }}
                 view={view}
                 onView={setView}

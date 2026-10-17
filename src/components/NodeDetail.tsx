@@ -330,23 +330,28 @@ export function NodeDetail({ node, showPeak, onBack }: {
   // the hub's default retention. `null` while it is in flight, or if the hub is
   // older than the feature, and no card is drawn for either.
   const [avail, setAvail] = useState<Availability | null>(null)
+  // ⚠️ 失败也要说出来 ✗✗ —— 此前 `.catch(() => setAvail(null))` 让一次瞬时 503 把整张
+  // "在线状态日历"静默抹掉（连"加载失败"都没有），而那正是与图表请求同时打、最容易撞上
+  // hub 那个 4 个并发闸门的时候。
+  const [availFailed, setAvailFailed] = useState(false)
+  const [availTry, setAvailTry] = useState(0)
 
   useEffect(() => {
     let active = true
     // oxlint-disable-next-line react/set-state-in-effect
     setAvail(null)
+    // oxlint-disable-next-line react/set-state-in-effect
+    setAvailFailed(false)
     api<{ availability: Availability | null }>(
       `/nodes/${node.id}/metrics?hours=168&series=availability&slot=1800`,
     )
       .then((next) => { if (active) setAvail(next.availability ?? null) })
-      // No error of its own: the bar is an addition to this screen, and the charts
-      // below report a failed read in the page's own words. A refused or missing
-      // bar therefore leaves the page otherwise intact.
-      .catch(() => { if (active) setAvail(null) })
+      // 读失败就**说出来并给一次重试**：静默消失会让读者以为这台机器没有可用率数据。
+      .catch(() => { if (active) setAvailFailed(true) })
     return () => { active = false }
     // `historyHours` in the deps: it starts at the fallback week and becomes what
     // the hub keeps once `/api/me` answers, and the bar must follow it.
-  }, [node.id, historyHours])
+  }, [node.id, historyHours, availTry])
 
   useEffect(() => {
     let active = true
@@ -630,7 +635,16 @@ export function NodeDetail({ node, showPeak, onBack }: {
         </dl>
       </Card>
 
-      {avail && <AvailabilityCard data={avail} />}
+      {avail ? (
+        <AvailabilityCard data={avail} />
+      ) : availFailed ? (
+        <div className="flex flex-wrap items-center gap-2 px-1 text-xs text-muted-foreground">
+          <span>在线状态日历读取失败。</span>
+          <Button size="sm" variant="outline" onClick={() => setAvailTry((n) => n + 1)}>
+            重试
+          </Button>
+        </div>
+      ) : null}
 
       {/* The operator's own note, which only a signed-in browser is sent at all
           (`node_view` attaches `remark` with the other panel-only fields), so this

@@ -6,8 +6,8 @@
 //
 // Nothing imports it, so the bundle never includes it.
 import {
-  availabilityText, missingMinutes, minuteLabel, outageLength, segmentSpan, segmentsFor, segmentText,
-  calendarCells, segmentTone, stepHours, stillDown, TONE_LABEL, windowLabel, type Availability, type Incident, type Segment,
+  availabilityText, missingMinutes, minuteLabel, outageLength, segmentSpan, segmentText,
+  calendarCells, segmentTone, stillDown, TONE_LABEL, windowLabel, type Incident, type Segment,
 } from "./uptime.ts"
 
 let failed = 0
@@ -67,79 +67,6 @@ eq(segmentText(seg(0, 60)), "离线 · 上报 0/60 分钟", "离线段的读法"
 eq(segmentText(seg(0, 60, false)), "无数据 · 该时段没有上报记录", "无数据段不报 n/m")
 eq(Object.keys(TONE_LABEL).length, 4, "图例四个状态")
 
-// stepHours: the width is chosen so the segment count stays countable, whatever
-// the window. One hour per segment is right for a day and absurd for a month.
-eq(stepHours(1), 1, "一小时窗就是一段")
-eq(stepHours(6), 1, "六小时窗仍然一小时一段")
-eq(stepHours(24), 1, "一天窗一小时一段（24 段）")
-eq(stepHours(48), 1, "两天仍是 48 段，仍在带内")
-eq(stepHours(72), 2, "三天改用两小时一段（36 段）")
-eq(stepHours(168), 3, "一周改用三小时一段（56 段）")
-eq(stepHours(720), 12, "三十天改用十二小时一段（60 段）")
-eq(stepHours(2160), 24, "九十天改用一天一段（90 段）")
-// 保留天数可以设到一年，档位跟到那时也不能退化成小时段：一天一段、365 段，
-// 与「九十天一天一段」是同一个取法。
-eq(stepHours(8760), 24, "一年也是一天一段（365 段）")
-for (const h of [1, 6, 24, 48, 72, 168, 720, 2160]) {
-  const n = Math.ceil(h / stepHours(h))
-  eq(n <= 90, true, `${h} 小时窗的段数不超过 90（得到 ${n}）`)
-}
-
-// segmentsFor: the bar always covers the period it claims, in segments of that
-// width. The hub answers in hours, so they are grouped; the padding is cut on the
-// same grid and stops at the first measured segment, which may begin before
-// `from` -- two segments over one stretch would be a lie about the width.
-{
-  const to = T
-  const buckets = [
-    { ts: to - 7_200, n: 60, m: 60 },
-    { ts: to - 3_600, n: 30, m: 60 },
-  ]
-  const full: Availability = { from: to - 7_200, to, buckets, incidents: [] }
-  const fullSegs = segmentsFor(full, 2)
-  eq(fullSegs.length, 2, "窗口已有全部数据时不补任何段")
-  eq(fullSegs.every((s) => s.known), true, "也不该有 unknown")
-
-  // Three hours asked for, one hour of history: two hours of 无数据 in front.
-  const short: Availability = { from: to - 3_600, to, buckets: [buckets[1]], incidents: [] }
-  const shortSegs = segmentsFor(short, 3)
-  eq(shortSegs.length, 3, "补到请求的宽度")
-  eq(shortSegs.slice(0, 2).every((s) => !s.known && s.m === 60), true, "补的是整段的无数据")
-  eq(shortSegs[2].known, true, "最后一段是实测的")
-  eq(shortSegs[2].ts, to - 3_600, "补齐的边界与第一个实测段对齐，不重叠")
-
-  const none: Availability = { from: to, to, buckets: [], incidents: [] }
-  eq(segmentsFor(none, 2).length, 2, "完全没有数据时整条都是无数据")
-  eq(segmentsFor(none, 2).every((s) => segmentTone(s) === "unknown"), true, "且都是 unknown")
-}
-
-// Grouping: a week's hours become 3-hour segments, and `m` follows the width --
-// the denominator must not stay at 60 when the numerator spans three hours.
-{
-  const to = T
-  const hours = Array.from({ length: 168 }, (_, i) => ({ ts: to - (168 - i) * 3_600, n: 60, m: 60 }))
-  const week: Availability = { from: to - 168 * 3_600, to, buckets: hours, incidents: [] }
-  const segs = segmentsFor(week, 168)
-  // 56 whole segments, and a 57th when the window's own start does not land on the
-  // 3-hour grid: the grid is the hub's, and cutting to it can only ever add a
-  // partial segment at the front, never drop one.
-  eq(segs.length >= 56 && segs.length <= 57, true, `一周合成 56–57 段（得到 ${segs.length}）`)
-  const whole = segs.filter((s) => s.m === 180)
-  eq(whole.every((s) => s.n === 180), true, "整段的分母与分子都是三小时")
-  eq(segs.every((s) => s.m > 0 && s.m <= 180), true, "每段的分母都在 0 与一整段之间")
-  eq(segs.reduce((sum, s) => sum + s.m, 0), 168 * 60, "所有段的分母加起来正好是整个窗口的分钟数")
-  eq(segs.filter((s) => s.m < 180).length <= 2, true, "最多只有首尾两段是残段（网格切法决定）")
-  eq(whole.length >= 55, true, `整段至少 55 个（得到 ${whole.length}）`)
-
-  // One 12-minute outage inside a day still shows: the day is partial, not full.
-  const day = hours.map((b, i) => (i === 40 ? { ...b, n: 48 } : b))
-  const withGap: Availability = { from: to - 168 * 3_600, to, buckets: day, incidents: [] }
-  const gapSegs = segmentsFor(withGap, 168)
-  eq(gapSegs.some((s) => segmentTone(s) === "warn"), true, "缺口落在的那一段是部分异常")
-  eq(segmentText(gapSegs.find((s) => segmentTone(s) === "warn")!), "部分异常 · 上报 168/180 分钟",
-     "粗粒度下仍然精确到分钟")
-}
-
 // Segment labels: an hour names an instant, anything wider names its stretch, and
 // a day is written as two dates rather than "00:00 – 00:00".
 {
@@ -197,7 +124,7 @@ eq(missingMinutes([]), 0, "空列表")
   eq(gapCell.every((c) => c.tone === "down"), true, `那两格都必须是离线`)
 
   const empty = calendarCells({ from: to, to, incidents: [], buckets: [] })
-  eq(empty.length, 336, "7 × 24 = 168 格")
+  eq(empty.length, 336, "7 行 × 48 格 = 336 格")
   eq(empty.every((c) => c.tone === "unknown"), true, "没有桶的格子是无数据，不是离线")
 
   const full = calendarCells({ from: t0, to, incidents: [], buckets: [
@@ -216,6 +143,17 @@ eq(missingMinutes([]), 0, "空列表")
   // 桶宽一小时、格子半小时 ⇒ 那个不满的桶同样铺到两格上。
   eq(part.length, 2, `有上报但不齐的桶铺到的两格（得到 ${part.length} 个）`)
   eq(part.every((c) => c.tone === "warn"), true, `那两格都是部分异常`)
+
+  // ⚠️ **分钟数不能算两遍** ✗✗ —— 旧 hub 不认识 `slot=1800`、按小时分桶时，一个桶铺两格；
+  // 旧行为是每格都整份累加 ⇒ 两格各写「30/60 分钟」（分母 60 而跨度只有 30，同一小时算了两次）。
+  const spread = calendarCells({ from: to, to, incidents: [], buckets: [
+    { ts: t0 + 3 * HOUR, n: 30, m: 60 },
+  ] })
+  const filled = spread.filter((c) => c.m > 0)
+  eq(filled.length, 2, "一小时桶铺两格")
+  eq(filled.reduce((a, c) => a + c.n, 0), 30, "两格的 n 加起来仍是 30")
+  eq(filled.reduce((a, c) => a + c.m, 0), 60, "两格的 m 加起来仍是 60")
+  eq(filled.every((c) => c.n / c.m === 0.5), true, "每一格自己的比例仍是对的（15/30）")
 }
 // ⚠️ 窗口对齐到本地零点之后，七行（星期）拿到的日期必须落在**同一周**里：
 // 请求 168 小时会跨 8 个自然日，不对齐就会出现两行拿着一周前的日期（看着像"更旧"）。

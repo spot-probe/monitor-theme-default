@@ -4,7 +4,7 @@
 //
 // Nothing imports it, so the bundle never includes it.
 import {
-  axisBytes, axisTop, bytes, cpuName, cycle, daysUntil, despike, expiryDays, money, osName, pair, percent, quarters, rateAxis,
+  axisBytes, axisTop, bytes, clock, clockFor, cpuName, cycle, daysUntil, despike, expiryDays, money, osName, pair, percent, quarters, rateAxis, stamp,
   RATE_FLOOR, tickClock, timeTicks, uptime,
 } from "./format.ts"
 
@@ -86,6 +86,18 @@ eq(quarters(axisTop(25_000_000, 4, 25_000_001)).length, 5, "四条网格线，�
     "刻度间距均匀",
   )
   eq(timeTicks(to, to - day), [], "反向区间不产出刻度")
+}
+
+// clock / stamp / clockFor: 本地时刻、"带日期的时刻"，以及按窗口宽度选哪一个。
+// 用本地时间构造，所以断言在任何时区都成立（不写死 UTC 偏移）。
+{
+  const t = new Date(2026, 7, 20, 14, 2).getTime() // 本地 2026-08-20 14:02
+  eq(clock(t).includes("14:02"), true, "clock 是 HH:MM")
+  eq(/^\d{2}:\d{2}$/.test(clock(t)), true, "clock 只有时与分")
+  eq(stamp(t).includes("14:02"), true, "stamp 也带时刻")
+  eq(/0?8[/\-.]0?20/.test(stamp(t)), true, "stamp 带月日")
+  eq(clockFor(24)(t), clock(t), "一天以内用时刻")
+  eq(clockFor(168)(t), stamp(t), "超过一天带日期")
 }
 
 // percent: 没有容量是"未知"，不是 0% —— 每一张卡、每一行表格都经过它。

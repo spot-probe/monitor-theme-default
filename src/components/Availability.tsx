@@ -92,11 +92,9 @@ function Hover({ segment, step, left }: { segment: Segment; step: number; left: 
 export function AvailabilityCard({ data }: { data: Availability }) {
   // ⭐ 默认收起 ✓：这张卡在最上面，展开才看细节。
   const { from, to, incidents } = data
-  // ⚠️ 步长**由这一周的窗口推**（不是写死 ✓）：`stepHours(168)` = **3 小时** ✓
-  // ⇒ 一格 = **180 分钟** ✓ —— 满 180 分钟为绿 ✓、缺任何一分钟为「部分异常 · 上报 N/180」✓
-  //（这套语义 `segmentTone`/`segmentText` 本来就有 ✓，我先前写死 1 小时把它盖掉了 ✓✗）。
-  // ⚠️ 关键是 `windowHours` 已经封顶一周 ✓ ⇒ 推出来的步长与保留期无关 ✓
-  //（保留期 90 天时原来是"一天一格 + 往回铺 90 天空格" ✓✗，现在不会了 ✓）。
+  // ⚠️ 粒度是**半小时一格**（`SLOT_HOURS`），7 行 × 48 列 = 336 格，不是按时间轴铺的分段带。
+  // 这一段此前描述的是已经删掉的 `stepHours`/"按窗口推步长"那条路（`segmentsFor`），而卡片
+  // 早已改用 `calendarCells` —— 留着只会让下一个人去找不存在的函数。
   const cells = calendarCells(data)
   // 提示框与无障碍标签仍然吃 `Segment` 那一套（状态文案、区间文案都在 `uptime.ts` 里，
   // 不在这里重写一遍 —— 页面只有一套说法 ✓）。

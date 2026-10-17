@@ -119,26 +119,6 @@ export function availabilityText(fraction: number): string {
 export type Segment = { ts: number; n: number; m: number; known: boolean }
 
 /**
- * How wide one segment is, in hours, for a window of `hours`.
- *
- * The rule is a *segment count*, not a bucket size. An hour per segment is right
- * for a day and absurd for a month: a week drawn hourly is 168 strips, which on a
- * card a little over 300px wide is under two pixels each -- a texture, not a
- * chart. Sixty is the top of the band that still reads at a glance; the exact
- * minutes are in the tooltip whatever the width, so the segments only have to
- * stay countable, and coarsening them costs nothing that the hover does not give
- * back.
- *
- * The ladder is whole hours only, and each rung divides the next: 1, 2, 3, 6, 12,
- * 24. A window that is not a multiple of its rung simply ends with a partial
- * segment, which the hub's own `m` already describes.
- */
-const STEPS = [1, 2, 3, 6, 12, 24] as const
-
-/** The band the segment count is kept inside: see `stepHours`. */
-const MOST = 60
-
-/**
  * 日历格里的一格：**第几行（日期）× 一天里的第几个时段**。
  *
  * ⚠️ `row` 是**窗口里的第几天**，不是星期几 —— 见 [`calendarCells`] 的说明。
@@ -197,6 +177,10 @@ export function calendarCells(data: Availability): Cell[] {
   const end = first + ROWS * 86_400
   const bucketSecs =
     data.buckets.length > 1 ? Math.max(60, data.buckets[1].ts - data.buckets[0].ts) : 3_600
+  // ⚠️ **一个桶可能比一格宽** ✗✗：旧 hub 不认识 `slot=1800`，仍按小时分桶 ⇒ 一个 1 小时的桶
+  // 会铺到两格上。此前每格都**整份**累加 `b.n`/`b.m`，于是两格各写「48/60 分钟」——分母是
+  // 60 分钟而跨度只有 30，同一小时还被算了两遍。按覆盖格数均分，两格加起来仍是那个桶的真值。
+  const perBucket = Math.max(1, Math.round(bucketSecs / width))
   const seen = new Set<Cell>()
   for (const b of data.buckets) {
     for (let ts = b.ts; ts < b.ts + bucketSecs; ts += width) {
@@ -216,15 +200,11 @@ export function calendarCells(data: Availability): Cell[] {
       } else if (SEVERITY[tone] > SEVERITY[cell.tone]) {
         cell.tone = tone
       }
-      cell.n += b.n
-      cell.m += b.m
+      cell.n += b.n / perBucket
+      cell.m += b.m / perBucket
     }
   }
   return cells
-}
-
-export function stepHours(hours: number): number {
-  return STEPS.find((s) => hours / s <= MOST) ?? STEPS[STEPS.length - 1]
 }
 
 /**
@@ -247,46 +227,6 @@ export function segmentText(s: Segment): string {
   return s.n === s.m
     ? `${TONE_LABEL[segmentTone(s)]}`
     : `${TONE_LABEL[segmentTone(s)]} · 上报 ${s.n}/${s.m} 分钟`
-}
-
-/**
- * The bar's segments: the stretch the hub measured, preceded by the stretch of the
- * period it did not, so the bar always covers the span its title claims.
- *
- * The hub answers in hours whatever the window, so this groups those hours into
- * `stepHours(hours)`-wide segments. Both the grouping and the padding are cut on
- * the same absolute grid -- whole hours, and each rung a multiple of the one below
- * it -- so a segment never straddles a boundary and the two halves line up.
- *
- * The padding stops at the first measured segment rather than at `data.from`,
- * because that segment may begin before `from` (it covers the part of its width
- * the node was alive for) and two segments over one stretch would be a lie about
- * the width.
- *
- * `hours` is what the page asked the hub for; the hub clamps its answer to the
- * node's life and to what it retains, and this is what puts the clamped part back
- * so a node added a day ago does not look like it has been up for a week.
- */
-export function segmentsFor(data: Availability, hours: number, step = stepHours(hours)): Segment[] {
-  const width = step * 3_600
-  const measured: Segment[] = []
-  for (const b of data.buckets) {
-    const ts = Math.floor(b.ts / width) * width
-    const last = measured[measured.length - 1]
-    // `m` accumulates too: a partial hour at either end of the window carries
-    // fewer than 60 minutes, and the segment's denominator has to be the sum.
-    if (last && last.ts === ts) {
-      last.n += b.n
-      last.m += b.m
-    } else {
-      measured.push({ ts, n: b.n, m: b.m, known: true })
-    }
-  }
-  const start = Math.floor((data.to - hours * 3_600) / width) * width
-  const first = measured[0]?.ts ?? data.to
-  const padding: Segment[] = []
-  for (let ts = start; ts < first; ts += width) padding.push({ ts, n: 0, m: step * 60, known: false })
-  return [...padding, ...measured]
 }
 
 /**
