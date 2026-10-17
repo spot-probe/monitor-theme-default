@@ -187,7 +187,7 @@ export function AvailabilityCard({ data }: { data: Availability }) {
             </TooltipTrigger>
             <TooltipContent>
               <p className="leading-relaxed">
-                按格统计：每格是四小时，格内每分钟都应有一条上报记录，缺一分钟即计为未上报。悬停或聚焦某一格可看该格的实际分钟数；方向键可逐格走。
+                按格统计：每格是半小时，格内每分钟都应有一条上报记录，缺一分钟即计为未上报。悬停或聚焦某一格可看该格的实际分钟数；方向键可逐格走。
               </p>
               {/* The four colours again, in the same shape the legend uses: the
                   key belongs beside the rule that produced it, and a reader who
@@ -219,11 +219,11 @@ export function AvailabilityCard({ data }: { data: Availability }) {
 
       {open && (
         <>
-      {/* ⭐ **7 × 6 的日历格** ✓（周一…周日 × 每 4 小时）—— 换掉原来那条 56 格的横条。
+      {/* ⭐ **7 × 48 的日历格** ✓（最近 7 个自然日 × 每半小时）—— 换掉原来那条按时间轴铺的横条。
           横条只能看出"哪几天有事"；日历格能看出"**每天哪个时段**不稳"，
           例如"每天凌晨 2–6 点掉线"在这张图上立刻可见 ✓。
-          ⚠️ 交互没有退化 ✓：仍然是**一个 tab 停靠 + 方向键走格**（左右 ±1 格、上下 ±6 格），
-          42 个格子不会变成 42 个 tab 停靠。 */}
+          ⚠️ 交互没有退化 ✓：仍然是**一个 tab 停靠 + 方向键走格**（左右 ±1 格、上下 ±48 格），
+          336 个格子不会变成 336 个 tab 停靠。 */}
       <div
         ref={bar}
         role="group"
@@ -284,8 +284,10 @@ export function AvailabilityCard({ data }: { data: Availability }) {
             </div>
             {/* 列的标签：每格的起始小时。 */}
             <div className="mt-1 grid grid-cols-[repeat(48,minmax(0,1fr))] gap-1 text-[10px] leading-none text-muted-foreground">
-              {SLOT_LABELS.map((s) => (
-                <span key={s} className="tnum text-center">
+              {/* ⚠️ key 用**索引**，不用标签文字：48 列里只有 12 列有字，其余是空串 ⇒
+                   会造出一堆重复的空 key（React 会告警，重排时还可能错配）。 */}
+              {SLOT_LABELS.map((s, i) => (
+                <span key={i} className="tnum text-center">
                   {s}
                 </span>
               ))}
