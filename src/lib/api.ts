@@ -179,7 +179,13 @@ export function useNodes() {
     let socket: WebSocket | null = null
     let poll: ReturnType<typeof setInterval> | null = null
     let retry: ReturnType<typeof setTimeout> | null = null
-    let closed = false
+    // ⚠️ 卸载标志。这里**曾经同名遮蔽**了外层的 `closed` 状态（公开页被关掉之后
+    // 不再重连的那个标志），于是 `onclose` 里的 `if (closed) return` 读的永远是
+    // 这个局部变量 —— 那条"401 之后别再重连"的承诺从来没生效，标签页会每 5 秒
+    // 重连一次直到关闭。
+    let disposed = false
+    // 401：公开页在本标签页打开之后被关掉了。重连与轮询都没有意义（再问还是 401）。
+    let unauthorized = false
 
     const receive = (list: Node[]) => {
       const safe = safeNodes(list)
@@ -195,7 +201,15 @@ export function useNodes() {
         .then((d) => receive(d.nodes))
         .catch((e: Error) => {
           setError(e.message)
-          if (e instanceof ApiError && e.status === 401) setClosed(true)
+          if (e instanceof ApiError && e.status === 401) {
+            unauthorized = true
+            setClosed(true)
+            // 轮询也没有意义了。
+            if (poll) {
+              clearInterval(poll)
+              poll = null
+            }
+          }
         })
 
     fetchOnce()
@@ -205,27 +219,44 @@ export function useNodes() {
     // outlives a deploy would remain on the fallback poll for the rest of its
     // life, refreshing at a fifth of the live rate with no indication.
     const connect = () => {
+      if (disposed || unauthorized) return
       try {
         socket = new WebSocket(url)
       } catch {
+        // 构造函数抛异常（URL 非法之类）：别把这一页永久留成轮询，但也别什么都不做。
         poll ??= setInterval(fetchOnce, 5000)
+        retry = setTimeout(connect, 5000)
         return
       }
       socket.onmessage = (event) => {
-        receive(JSON.parse(event.data).nodes)
-        // The stream has returned; the poll was only covering for it.
+        // ⚠️ 一帧解析失败不能把这条流弄死：跳过这一帧，等下一帧。
+        let list: unknown
+        try {
+          list = JSON.parse(event.data).nodes
+        } catch {
+          return
+        }
+        if (!Array.isArray(list)) return
+        receive(list as Node[])
+      }
+      socket.onopen = () => {
+        setLive(true)
+        // ⚠️ **连上就把轮询停掉** ✓ —— 放在 `onmessage` 里时，一个安静的集群（快照没变
+        // hub 就不发包）会让轮询继续跑几十秒，而那期间 WS 明明已经通了。
         if (poll) {
           clearInterval(poll)
           poll = null
         }
       }
-      socket.onopen = () => setLive(true)
       socket.onerror = () => socket?.close()
       socket.onclose = () => {
+        // 卸载之后不再碰任何状态。
+        if (disposed) return
         // The fallback poll below still updates the figures, at a fifth of the
         // rate; `live` is about the stream, which is what the page says.
         setLive(false)
-        if (closed) return
+        // 401 之后重连没有意义。
+        if (unauthorized) return
         poll ??= setInterval(fetchOnce, 5000)
         retry = setTimeout(connect, 5000)
       }
@@ -233,7 +264,7 @@ export function useNodes() {
     connect()
 
     return () => {
-      closed = true
+      disposed = true
       socket?.close()
       if (poll) clearInterval(poll)
       if (retry) clearTimeout(retry)

@@ -4,7 +4,7 @@
 //
 // Nothing imports it, so the bundle never includes it.
 import {
-  axisBytes, axisTop, bytes, cpuName, cycle, daysUntil, despike, expiryDays, money, osName, pair, quarters, rateAxis,
+  axisBytes, axisTop, bytes, cpuName, cycle, daysUntil, despike, expiryDays, money, osName, pair, percent, quarters, rateAxis,
   RATE_FLOOR, tickClock, timeTicks, uptime,
 } from "./format.ts"
 
@@ -87,6 +87,13 @@ eq(quarters(axisTop(25_000_000, 4, 25_000_001)).length, 5, "四条网格线，�
   )
   eq(timeTicks(to, to - day), [], "反向区间不产出刻度")
 }
+
+// percent: 没有容量是"未知"，不是 0% —— 每一张卡、每一行表格都经过它。
+eq(percent(50, 100), 50, "正常百分比")
+eq(percent(200, 100), 100, "上限封顶 100")
+eq(percent(1, 0), null, "没有容量 ⇒ 未知，不是 0%")
+eq(percent(0, 0), null, "0 / 0 也是未知")
+eq(percent(1, -1), null, "负容量同样是说不清")
 
 // daysUntil: whole days, negative once past, null when there is no date.
 {

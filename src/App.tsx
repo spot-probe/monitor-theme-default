@@ -310,7 +310,7 @@ export default function App() {
             >
               {/* The tab's own mark, so the page and the tab read as the same thing
                   rather than two things that happen to share a name. */}
-              <img src="/favicon.svg" alt="" className="size-5 shrink-0" />
+              <img src="/site-icon/tab" alt="" className="size-5 shrink-0" />
               <span className="truncate">{me.site_name || "Monitor"}</span>
             </button>
           </h1>

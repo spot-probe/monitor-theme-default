@@ -57,14 +57,12 @@ eq(crosshairY(1, 4, 0), null, "没有高度就不画横线")
   eq(chipWidth("↓ 2.4 MB/s") > chipWidth("2.4 MB/s"), true, "箭头不是免费的")
 }
 
-if (failed) {
-  console.error(`\n${failed} 项不通过`)
-  throw new Error("chart 校验未通过")
-}
-console.log("chart 校验通过")
-
 // 内部系列（峰值带 b{id} / c{id}）必须被 tooltip 排除，正常序列不能被误伤。
 // 对应线上真实出现过的 bug：tooltip 里冒出一行 b6（tooltipType="none" 没被遵守）。
+//
+// ⚠️ 这一节**必须在下面的失败检查之前** —— 它此前写在 `throw` 之后，于是这几条断言
+// 永远不会让 `npm test` 失败（`failed++` 只打印、进程照常退出 0）。那正是这个 bug 的
+// 回归测试，形同虚设。
 eq(isInternalSeries("b6"), true, "峰值带 b6 是内部系列")
 eq(isInternalSeries("c6"), true, "裁剪后的带 c6 也是")
 eq(isInternalSeries("t6"), false, "原始序列 t6 不是")
@@ -72,3 +70,9 @@ eq(isInternalSeries("s6"), false, "平滑序列 s6 不是")
 eq(isInternalSeries("rx_band"), false, "带宽图的 rx_band 不是")
 eq(isInternalSeries("ts"), false, "时间轴 ts 不是")
 eq(isInternalSeries(6), false, "数字键不是")
+
+if (failed) {
+  console.error(`\n${failed} 项不通过`)
+  throw new Error("chart 校验未通过")
+}
+console.log("chart 校验通过")

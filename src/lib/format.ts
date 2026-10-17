@@ -51,8 +51,11 @@ export function rate(n: number): string {
   return `${bytes(n, 1)}/s`
 }
 
-export function percent(used: number, total: number): number {
-  return total > 0 ? Math.min(100, (used / total) * 100) : 0
+export function percent(used: number, total: number): number | null {
+  // ⚠️ **没有容量不是 0%** ✗✗ —— 旧实现返回 0，于是"没上报/没有上限"被画成
+  // 「0.0%」加一条空条。返回 `null` 之后走 Meter/Bar 已有的"未知"通道（显示「—」）。
+  // `total === 0` 与 `total < 0` 都算说不清。
+  return total > 0 ? Math.min(100, (used / total) * 100) : null
 }
 
 export function uptime(seconds: number): string {

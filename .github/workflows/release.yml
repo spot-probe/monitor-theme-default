@@ -24,6 +24,12 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      # ⚠️ **lint 与 test 也要在这里跑** ✗✗ —— 它们此前只在 ci.yml 里，而两个工作流都由
+      # tag 触发、彼此没有先后：lint 或测试挂了，tag 照样会发布 theme.tar.gz，而 hub 只认
+      # "tag 与已装版本不同" ⇒ 装上去之后才发现。ci.yml 里那句"这是 tag 唯一的一道门"
+      # 说得太大了。
+      - run: npm run lint
+      - run: npm test
       - run: npm run build
 
       # The archive is an installable theme directory rather than a source
@@ -33,7 +39,13 @@ jobs:
       # release is the reference form for a third-party theme. preview.png is the
       # panel's thumbnail, packaged beside theme.json rather than inside dist/
       # because it is metadata rather than content the theme serves.
-      - run: tar czf theme.tar.gz dist theme.json preview.png
+      # ⚠️ `preview.png` 是**可选**的（README 与 hub 都这么认为），此前这里无条件把它塞进
+      # tar ⇒ 第三方照抄这份工作流、又没放预览图时，打 tag 会在这一步失败。文件在就带上。
+      - run: |
+          FILES="dist theme.json"
+          if [ -f preview.png ]; then FILES="$FILES preview.png"; fi
+          tar czf theme.tar.gz $FILES
+          tar tzf theme.tar.gz | head -3
       - run: sha256sum theme.tar.gz | cut -d' ' -f1 | tee theme.tar.gz.sha256
 
       # A manual dispatch builds and packages without publishing, so the path can
