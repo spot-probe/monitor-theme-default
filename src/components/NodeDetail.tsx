@@ -771,7 +771,7 @@ export function NodeDetail({ node, showPeak, onBack }: {
                 <p className="py-8 text-center text-sm">没有选中任何探测</p>
               ) : (
                 <ResponsiveContainer>
-                  <ComposedChart data={pingRows}>
+                  <ComposedChart accessibilityLayer data={pingRows}>
                     <CartesianGrid strokeDasharray="3 3" className="stroke-muted" vertical={false} />
                     <XAxis
                       {...timeAxis(
@@ -934,7 +934,7 @@ export function NodeDetail({ node, showPeak, onBack }: {
                   cannot share one scale. No right margin here: the axis below
                   stands in that space, and the panels without one reserve it as a
                   margin so the four plots keep the same x range. */}
-              <ComposedChart data={metricRows} margin={{ top: 8, right: 0 }}>
+              <ComposedChart accessibilityLayer data={metricRows} margin={{ top: 8, right: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" className="stroke-muted" vertical={false} />
                 <XAxis {...timeAxis(metricRows)} />
                 <YAxis
@@ -1009,7 +1009,7 @@ export function NodeDetail({ node, showPeak, onBack }: {
               {/* Composed rather than an area chart, since swap is a second line
                   on the same axis. A hub without the field sends none of it and
                   only the area is drawn. */}
-              <ComposedChart data={metricRows} margin={{ top: 8, right: hasLoad || hasProcs ? LOAD_AXIS : 0 }}>
+              <ComposedChart accessibilityLayer data={metricRows} margin={{ top: 8, right: hasLoad || hasProcs ? LOAD_AXIS : 0 }}>
                 <CartesianGrid strokeDasharray="3 3" className="stroke-muted" vertical={false} />
                 <XAxis {...timeAxis(metricRows)} />
                 <YAxis domain={[0, memTop]} ticks={quarters(memTop)} tickFormatter={axisBytes} {...VALUE_AXIS} {...AXIS} />
@@ -1050,7 +1050,7 @@ export function NodeDetail({ node, showPeak, onBack }: {
             }
           >
             <ResponsiveContainer>
-              <ComposedChart data={metricRows} margin={{ top: 8, right: hasLoad || hasProcs ? LOAD_AXIS : 0 }}>
+              <ComposedChart accessibilityLayer data={metricRows} margin={{ top: 8, right: hasLoad || hasProcs ? LOAD_AXIS : 0 }}>
                 <CartesianGrid strokeDasharray="3 3" className="stroke-muted" vertical={false} />
                 <XAxis {...timeAxis(metricRows)} />
                 <YAxis scale="log" {...axes.rate} tickFormatter={axisBytes} unit="/s" {...VALUE_AXIS} {...AXIS} />
@@ -1134,7 +1134,7 @@ export function NodeDetail({ node, showPeak, onBack }: {
             }
           >
             <ResponsiveContainer>
-              <AreaChart data={metricRows} margin={{ top: 8, right: hasLoad || hasProcs ? LOAD_AXIS : 0 }}>
+              <AreaChart accessibilityLayer data={metricRows} margin={{ top: 8, right: hasLoad || hasProcs ? LOAD_AXIS : 0 }}>
                 <CartesianGrid strokeDasharray="3 3" className="stroke-muted" vertical={false} />
                 <XAxis {...timeAxis(metricRows)} />
                 <YAxis domain={[0, node.disk_total]} ticks={quarters(node.disk_total)} tickFormatter={axisBytes} {...VALUE_AXIS} {...AXIS} />
@@ -1185,7 +1185,7 @@ export function NodeDetail({ node, showPeak, onBack }: {
                   再写 `LOAD_AXIS` 就等于预留两次 ⇒ 右边多出一条白带（实测过 ✗）。
                   上面四张写 `LOAD_AXIS` 是另一回事：它们**没有**右轴，那 36px 是替
                   「有右轴的那张」对齐用的（见 CPU 那张 margin 的注释）。 */}
-              <ComposedChart data={metricRows} margin={{ top: 8, right: 0 }}>
+              <ComposedChart accessibilityLayer data={metricRows} margin={{ top: 8, right: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" className="stroke-muted" vertical={false} />
                 <XAxis {...timeAxis(metricRows)} />
                 {/* ⚠️ `allowDecimals={false}`：连接数是整数，默认的刻度会给 11.25 这种。 */}
