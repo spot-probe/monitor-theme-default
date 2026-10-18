@@ -19,6 +19,13 @@ type Me = { authed: boolean; github: boolean; site_name: string; public_page: bo
 // 188 kB), with the rest fetched immediately after it paints.
 const loadDetail = () => import("@/components/NodeDetail").then((m) => ({ default: m.NodeDetail }))
 const NodeDetail = lazy(loadDetail)
+// 详情页那个分块只取一次。空闲预取与"指针进到列表上"两条路都调它。
+let detailWarmed = false
+function warmDetail() {
+  if (detailWarmed) return
+  detailWarmed = true
+  void loadDetail()
+}
 
 // `/node/{id}` is a real page: it survives a reload, can be linked to, and back
 // leaves the detail view rather than the site. The hub serves index.html for any
@@ -203,11 +210,25 @@ export default function App() {
     // Requested alongside /me rather than after it: it never rejects, any failure
     // yielding the defaults. A hub without the settings endpoint answers 404.
     void loadConfig().then(setConfig)
-    // Warmed here rather than left to Suspense, which requests the chunk only
-    // once a render reaches the detail view, itself waiting on /me. Without this
-    // the split trades its first paint for a full-page skeleton over the first
-    // node opened: 2.6s click-to-chart on 4G against 1.4s unsplit, 1.7s warm.
-    void loadDetail()
+    // ⚠️ 预取**推迟到首屏之后** ✗✓（原先在这里立刻取）。理由是量出来的：详情页那个分块
+    // 133 KB(gzip)，占了首屏 JS/CSS 的**一半以上**（236.5 KB → 103 KB），而列表页根本
+    // 用不到它 —— 首屏只画卡片。
+    //
+    // 但**不能干脆不取**：不预取的话，第一次点开节点要等 chunk 落地（原注释记的是
+    // 2.6s click-to-chart on 4G）。所以改成两条路：
+    //   1. 空闲时取（requestIdleCallback，2 秒兜底）—— 正常浏览时它早就准备好了；
+    //   2. 指针进入列表或聚焦时立刻取 —— 点下去之前就已经在下载。
+    // 直接删掉 `void loadDetail()` 是最省字节的做法，但那等于把等待挪到最需要快的那一刻。
+    // 省流模式下**不预取**：那一份 133 KB 对按流量计费的人不是"免费提前量"。
+    // 手指/指针真的落到列表上时（warmDetail 的第二条路）仍然会取。
+    const saveData = (navigator as { connection?: { saveData?: boolean } }).connection?.saveData
+    if (saveData) return
+    const idle = window.requestIdleCallback?.(warmDetail, { timeout: 2000 })
+    const timer = idle === undefined ? window.setTimeout(warmDetail, 1200) : undefined
+    return () => {
+      if (idle !== undefined) window.cancelIdleCallback?.(idle)
+      if (timer !== undefined) window.clearTimeout(timer)
+    }
   }, [loadMe])
 
   // The status page was closed while this tab was open. `me` holds whatever it
@@ -361,7 +382,13 @@ export default function App() {
         </div>
       </header>
 
-      <main className="mx-auto max-w-[1400px] px-4 py-4 sm:px-6">
+      {/* 指针一进列表就把详情页分块催下来（事件冒泡，一处覆盖所有卡片）：等真的点下去时，
+          它多半已经下载完了 —— 这是"晚一点取"与"点了立刻有"之间的折中。 */}
+      <main
+        className="mx-auto max-w-[1400px] px-4 py-4 sm:px-6"
+        onPointerEnter={warmDetail}
+        onFocus={warmDetail}
+      >
         {error && <p className="mb-3 text-sm text-destructive">{error}</p>}
 
         {open !== null ? (
